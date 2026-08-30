@@ -1,4 +1,5 @@
 import { env } from "cloudflare:workers";
+import { analysisServiceConfigured } from "../../../lib/runtime-capabilities";
 import { jsonError, parseCreateSessionInput } from "../../../lib/session-contract";
 
 export const dynamic = "force-dynamic";
@@ -22,6 +23,9 @@ export async function POST(request: Request) {
 
   const parsed = parseCreateSessionInput(body);
   if (!parsed.ok) return jsonError(parsed.error, 400);
+  if (!analysisServiceConfigured(env)) {
+    return jsonError("The beta analysis worker is temporarily unavailable. No video was uploaded.", 503);
+  }
 
   const input = parsed.value;
   const profileId = await stableProfileId(input.anonymousId);

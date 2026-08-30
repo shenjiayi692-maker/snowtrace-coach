@@ -6,9 +6,9 @@ footage is usable, aligns comparable turn phases, finds one meaningful movement
 gap, and returns one evidence-backed drill.
 
 This repository contains the first vertical slice, not a finished coaching
-product. The web experience is intentionally explicit about which screens are
-real preflight checks and which result values are sample output until the hosted
-analysis service is connected.
+product. The web experience does not expose sample coaching: it checks worker
+availability before upload and only shows evidence returned by the quality-gated
+analysis service.
 
 ## Current scope
 
@@ -17,7 +17,8 @@ analysis service is connected.
 - Browser-side inspection of duration, resolution, orientation, exposure, and
   image clarity before upload
 - Real session creation, D1 persistence, streaming R2 uploads, upload-integrity
-  checks, idempotent analysis queueing, status refresh, and source deletion
+  checks, idempotent analysis queueing, automatic status refresh, device-local
+  session recovery, ranged source playback, and source deletion
 - Replaceable Python video-intelligence service using FFmpeg, OpenCV, and the
   official MediaPipe Pose Landmarker task model
 - Multi-person pose tracking with an explicit rider-selection state when the
@@ -136,5 +137,4 @@ with direct multipart object-storage uploads before raising the size limit.
 - One report contains one primary gap and one drill, not a laundry list.
 - Framework labels such as CASI, AASI, or JSBA are optional references rather
   than the source of truth.
-- Sample report values in the current UI must be replaced by service output
-  before beta coaching is presented as real.
+- The UI never substitutes sample values when service evidence is unavailable.

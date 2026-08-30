@@ -262,6 +262,52 @@ input:focus-visible {
   background: rgba(255, 255, 255, 0.28);
 }
 
+.service-notice {
+  margin-bottom: 26px;
+  padding: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+  border: 1px solid var(--line);
+  background: rgba(137, 216, 255, 0.16);
+}
+
+.service-notice.unavailable {
+  border-color: #aa3b2e;
+  background: #fff2ed;
+}
+
+.service-notice strong,
+.service-notice p {
+  display: block;
+}
+
+.service-notice strong {
+  margin-top: 7px;
+  font-size: 0.9rem;
+}
+
+.service-notice p {
+  margin: 6px 0 0;
+  color: var(--muted);
+  font-size: 0.72rem;
+  line-height: 1.5;
+}
+
+.service-notice .secondary-button {
+  width: auto;
+  min-width: 126px;
+  min-height: 42px;
+  margin: 0;
+}
+
+.service-inline-message {
+  margin: 0;
+  color: #8b3124;
+  font-size: 0.72rem;
+}
+
 .goal-options {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
@@ -1639,9 +1685,14 @@ input:focus-visible {
 
   .queue-identifiers,
   .submission-error > div,
-  .rider-role-heading {
+  .rider-role-heading,
+  .service-notice {
     align-items: stretch;
     flex-direction: column;
+  }
+
+  .service-notice .secondary-button {
+    width: 100%;
   }
 
   .candidate-grid {

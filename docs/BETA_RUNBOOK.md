@@ -75,7 +75,9 @@ separate from an unsupported measurement claim.
 
 The app records session creation, both-upload completion, analysis state,
 ambiguous-rider state, accepted evidence, report completion, and three feedback
-answers. The owner-only `/api/beta/metrics` endpoint summarizes the funnel.
+answers. The bearer-token-protected `/api/beta/metrics` endpoint summarizes the
+funnel. Store `BETA_METRICS_TOKEN` in Sites runtime settings; never place it in
+the beta issue log or a URL.
 
 Keep a separate de-identified issue log with rider number, device/browser,
 camera mode, failure stage, visible symptom, resolution, and whether it blocked

@@ -72,3 +72,30 @@ test("rejects an invalid analysis session before touching storage", async () => 
   assert.equal(response.status, 400);
   assert.deepEqual(await response.json(), { error: "A valid anonymous rider ID is required." });
 });
+
+test("does not create a valid session while the analysis worker is offline", async () => {
+  const videos = ["reference", "rider"].map((role) => ({
+    role,
+    originalName: `${role}.mp4`,
+    contentType: "video/mp4",
+    sizeBytes: 100,
+    durationSeconds: 8,
+    width: 1280,
+    height: 720,
+    preflight: { resolutionScore: 88, durationScore: 100, exposureScore: 80, sharpnessScore: 75 },
+  }));
+  const response = await fetchBuiltApp(new Request("http://localhost/api/sessions", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      anonymousId: "rider_1234567890abcdef",
+      goal: "medium",
+      cameraMode: "fixed",
+      viewAngle: "three-quarter",
+      stance: "regular",
+      videos,
+    }),
+  }));
+  assert.equal(response.status, 503);
+  assert.deepEqual(await response.json(), { error: "The beta analysis worker is temporarily unavailable. No video was uploaded." });
+});

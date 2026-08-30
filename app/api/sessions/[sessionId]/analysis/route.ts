@@ -1,5 +1,6 @@
 import { env } from "cloudflare:workers";
 import { signedMediaUrl } from "../../../../../lib/analysis-signing";
+import { analysisServiceConfigured } from "../../../../../lib/runtime-capabilities";
 import { jsonError } from "../../../../../lib/session-contract";
 
 export const dynamic = "force-dynamic";
@@ -10,7 +11,7 @@ type SessionRow = { id: string; camera_mode: "fixed" | "follow" };
 type SelectedTrackIds = Partial<Record<"reference" | "rider", number>>;
 
 async function dispatchToWorker(request: Request, runId: string, cameraMode: "fixed" | "follow", videos: VideoRow[], selectedTrackIds: SelectedTrackIds = {}) {
-  if (!env.ANALYSIS_SERVICE_URL || !env.ANALYSIS_SERVICE_TOKEN || !env.ANALYSIS_SIGNING_SECRET) return "awaiting_worker";
+  if (!analysisServiceConfigured(env)) return "awaiting_worker";
   let serviceUrl: URL;
   try {
     serviceUrl = new URL("/v1/jobs", env.ANALYSIS_SERVICE_URL);

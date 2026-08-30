@@ -24,20 +24,22 @@ check and allow up to 300 seconds for graceful shutdown.
 
 ## Secrets and wiring
 
-Generate two independent random values:
+Generate three independent random values:
 
 1. `analysis_service_token` authenticates Sites → worker and worker → Sites.
 2. `analysis_signing_secret` signs short-lived source/proxy URLs owned by Sites.
+3. `beta_metrics_token` protects the owner operations endpoint on the public Site.
 
 Set `SNOWTRACE_JOB_TOKEN` on the worker to `analysis_service_token`. The worker
 automatically uses it for callbacks when `SNOWTRACE_CALLBACK_TOKEN` is unset.
 
-After the worker is healthy, configure these three Sites runtime values and
+After the worker is healthy, configure these four Sites runtime values and
 publish the current saved version again:
 
 - `ANALYSIS_SERVICE_URL=https://<worker-host>`
 - `ANALYSIS_SERVICE_TOKEN=<analysis_service_token>`
 - `ANALYSIS_SIGNING_SECRET=<analysis_signing_secret>`
+- `BETA_METRICS_TOKEN=<beta_metrics_token>`
 
 Never put either secret in `.env.example`, `render.yaml`, source control, a
 deployment URL, or a beta issue log.

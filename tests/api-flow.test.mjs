@@ -64,10 +64,12 @@ class R2Mock {
     return object ? { key, size: object.bytes.byteLength } : null;
   }
 
-  get(key) {
+  get(key, options) {
     const object = this.objects.get(key);
     if (!object) return null;
-    return { key, size: object.bytes.byteLength, body: new Response(object.bytes).body };
+    const range = options?.range;
+    const bytes = range ? object.bytes.slice(range.offset, range.offset + range.length) : object.bytes;
+    return { key, size: bytes.byteLength, body: new Response(bytes).body };
   }
 
   delete(keys) {
@@ -89,8 +91,19 @@ before(async () => {
   globalThis.__snowtraceCloudflareEnv = {
     DB: new D1Mock(database),
     VIDEOS: new R2Mock(),
+    ANALYSIS_SERVICE_URL: "https://analysis.test",
     ANALYSIS_SERVICE_TOKEN: "callback-test-token",
     ANALYSIS_SIGNING_SECRET: "media-signing-test-secret",
+    BETA_METRICS_TOKEN: "beta-metrics-test-token",
+  };
+
+  const nativeFetch = globalThis.fetch;
+  globalThis.fetch = async (input, init) => {
+    const request = input instanceof Request ? input : new Request(input, init);
+    if (new URL(request.url).hostname === "analysis.test") {
+      return Response.json({ status: "accepted" }, { status: 202 });
+    }
+    return nativeFetch(input, init);
   };
 
   const workerUrl = new URL("../dist/server/index.js", import.meta.url);
@@ -164,6 +177,24 @@ test("creates, uploads, queues, reads and deletes a real analysis session", asyn
     }));
     assert.equal(uploadResponse.status, 200, await uploadResponse.clone().text());
   }
+
+  const uploadedReference = created.videos.find((video) => video.role === "reference");
+  const fullPlaybackResponse = await fetchApp(new URL(uploadedReference.uploadUrl, "http://snowtrace.test"), { method: "GET" });
+  assert.equal(fullPlaybackResponse.status, 200);
+  assert.equal(fullPlaybackResponse.headers.get("accept-ranges"), "bytes");
+  assert.deepEqual(new Uint8Array(await fullPlaybackResponse.arrayBuffer()), sourceBytes.reference);
+
+  const rangedPlaybackResponse = await fetchApp(new URL(uploadedReference.uploadUrl, "http://snowtrace.test"), {
+    headers: { range: "bytes=0-3" },
+  });
+  assert.equal(rangedPlaybackResponse.status, 206);
+  assert.equal(rangedPlaybackResponse.headers.get("content-range"), `bytes 0-3/${sourceBytes.reference.byteLength}`);
+  assert.deepEqual(new Uint8Array(await rangedPlaybackResponse.arrayBuffer()), sourceBytes.reference.slice(0, 4));
+
+  const invalidRangeResponse = await fetchApp(new URL(uploadedReference.uploadUrl, "http://snowtrace.test"), {
+    headers: { range: "bytes=9999-10000" },
+  });
+  assert.equal(invalidRangeResponse.status, 416);
 
   const queueResponse = await fetchApp(new URL(created.analysisUrl, "http://snowtrace.test"), { method: "POST" });
   assert.equal(queueResponse.status, 202);
@@ -259,6 +290,7 @@ test("creates, uploads, queues, reads and deletes a real analysis session", asyn
   assert.equal(status.run.status, "completed");
   assert.equal(status.evidence[0].metric_id, "knee_flexion_lead");
   assert.deepEqual(status.videos.map((video) => video.uploaded).sort(), [true, true]);
+  assert.ok(status.videos.every((video) => video.playback_url.includes(created.sessionId)));
 
   const feedbackResponse = await fetchApp("http://snowtrace.test/api/feedback", {
     method: "POST",
@@ -275,7 +307,9 @@ test("creates, uploads, queues, reads and deletes a real analysis session", asyn
   });
   assert.equal(feedbackResponse.status, 201, await feedbackResponse.clone().text());
 
-  const metricsResponse = await fetchApp("http://snowtrace.test/api/beta/metrics");
+  const metricsResponse = await fetchApp("http://snowtrace.test/api/beta/metrics", {
+    headers: { authorization: "Bearer beta-metrics-test-token" },
+  });
   assert.equal(metricsResponse.status, 200);
   const metrics = await metricsResponse.json();
   assert.equal(metrics.funnel.sessionsCreated, 1);
@@ -331,4 +365,19 @@ test("creates, uploads, queues, reads and deletes a real analysis session", asyn
   assert.equal(deleteResponse.status, 204);
   const missingResponse = await fetchApp(new URL(created.statusUrl, "http://snowtrace.test"));
   assert.equal(missingResponse.status, 404);
+});
+
+test("reports worker availability without exposing runtime secrets", async () => {
+  const response = await fetchApp("http://snowtrace.test/api/system-status");
+  assert.equal(response.status, 200);
+  const status = await response.json();
+  assert.deepEqual(status, {
+    analysisAvailable: true,
+    productScope: "snowboard_carving",
+    pipelineVersion: "video-intelligence-v0.1",
+  });
+  assert.equal(JSON.stringify(status).includes("callback-test-token"), false);
+
+  const metricsResponse = await fetchApp("http://snowtrace.test/api/beta/metrics");
+  assert.equal(metricsResponse.status, 401);
 });

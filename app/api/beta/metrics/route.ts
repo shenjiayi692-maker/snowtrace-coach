@@ -1,4 +1,5 @@
 import { env } from "cloudflare:workers";
+import { jsonError } from "../../../../lib/session-contract";
 
 export const dynamic = "force-dynamic";
 
@@ -10,7 +11,24 @@ function ratio(numerator: number, denominator: number) {
   return denominator ? Math.round((numerator / denominator) * 1000) / 10 : 0;
 }
 
-export async function GET() {
+async function tokenMatches(received: string, expected: string) {
+  const encoder = new TextEncoder();
+  const [leftBuffer, rightBuffer] = await Promise.all([
+    crypto.subtle.digest("SHA-256", encoder.encode(received)),
+    crypto.subtle.digest("SHA-256", encoder.encode(expected)),
+  ]);
+  const left = new Uint8Array(leftBuffer);
+  const right = new Uint8Array(rightBuffer);
+  let difference = left.length ^ right.length;
+  for (let index = 0; index < Math.max(left.length, right.length); index += 1) difference |= (left[index] ?? 0) ^ (right[index] ?? 0);
+  return difference === 0;
+}
+
+export async function GET(request: Request) {
+  if (!env.BETA_METRICS_TOKEN) return jsonError("Beta metrics are not configured.", 503);
+  const authorization = request.headers.get("authorization");
+  const received = authorization?.startsWith("Bearer ") ? authorization.slice(7) : "";
+  if (!received || !(await tokenMatches(received, env.BETA_METRICS_TOKEN))) return jsonError("Beta metrics are not authorized.", 401);
   const sessionCount = await env.DB.prepare("SELECT COUNT(*) AS count FROM sessions").first<{ count: number }>();
   const participantCount = await env.DB.prepare(
     "SELECT COUNT(DISTINCT progressions.profile_id) AS count FROM sessions JOIN progressions ON progressions.id = sessions.progression_id",

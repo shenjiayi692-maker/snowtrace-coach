@@ -14,7 +14,19 @@ type SessionRow = {
 };
 
 type RunRow = { id: string; status: string; stage: string | null; error_code: string | null; updated_at: string };
-type VideoRow = { id: string; role: string; object_key: string; original_name: string; expires_at: string };
+type VideoRow = {
+  id: string;
+  role: "reference" | "rider";
+  object_key: string;
+  original_name: string;
+  content_type: string;
+  size_bytes: number;
+  duration_seconds: number | null;
+  width: number | null;
+  height: number | null;
+  metadata_json: string | null;
+  expires_at: string;
+};
 type EvidenceRow = { metric_id: string; rank: number; confidence: number; effect_size: number; phase: string; user_timestamp_ms: number; reference_timestamp_ms: number; evidence_json: string };
 type OutputRow = { status: string; result_json: string };
 
@@ -143,12 +155,23 @@ export async function GET(_request: Request, context: { params: Promise<{ sessio
     "SELECT id, status, stage, error_code, updated_at FROM analysis_runs WHERE session_id = ? ORDER BY created_at DESC LIMIT 1",
   ).bind(sessionId).first<RunRow>();
   const videoResult = await env.DB.prepare(
-    "SELECT id, role, object_key, original_name, expires_at FROM videos WHERE session_id = ? AND deleted_at IS NULL",
+    `SELECT id, role, object_key, original_name, content_type, size_bytes, duration_seconds, width, height, metadata_json, expires_at
+     FROM videos WHERE session_id = ? AND deleted_at IS NULL`,
   ).bind(sessionId).all<VideoRow>();
-  const videos = await Promise.all((videoResult.results ?? []).map(async ({ object_key, ...video }) => ({
-    ...video,
-    uploaded: Boolean(await env.VIDEOS.head(object_key)),
-  })));
+  const videos = await Promise.all((videoResult.results ?? []).map(async ({ object_key, metadata_json, ...video }) => {
+    let preflight: unknown = null;
+    try {
+      preflight = metadata_json ? (JSON.parse(metadata_json) as { browserPreflight?: unknown }).browserPreflight ?? null : null;
+    } catch {
+      preflight = null;
+    }
+    return {
+      ...video,
+      preflight,
+      playback_url: `/api/videos/${encodeURIComponent(video.id)}/content?session=${encodeURIComponent(sessionId)}`,
+      uploaded: Boolean(await env.VIDEOS.head(object_key)),
+    };
+  }));
   const evidenceResult = run ? await env.DB.prepare(
     `SELECT metric_id, rank, confidence, effect_size, phase, user_timestamp_ms, reference_timestamp_ms, evidence_json
      FROM comparison_evidence WHERE analysis_run_id = ? ORDER BY rank LIMIT 3`,

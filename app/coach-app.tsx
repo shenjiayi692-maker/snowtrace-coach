@@ -68,11 +68,37 @@ type AnalysisOutcome = {
 };
 
 type SessionSnapshot = {
-  run: { status: string; stage: string | null; error_code: string | null } | null;
+  session: { id: string; status: string };
+  run: { id: string; status: string; stage: string | null; error_code: string | null } | null;
+  videos: SessionVideoSnapshot[];
   evidence: EvidenceSnapshot[];
   action: RiderSelectionAction | null;
   outcome: AnalysisOutcome | null;
 };
+
+type SessionVideoSnapshot = {
+  id: string;
+  role: VideoRole;
+  original_name: string;
+  content_type: string;
+  size_bytes: number;
+  duration_seconds: number | null;
+  width: number | null;
+  height: number | null;
+  expires_at: string;
+  playback_url: string;
+  uploaded: boolean;
+  preflight: {
+    resolutionScore?: number;
+    durationScore?: number;
+    exposureScore?: number | null;
+    sharpnessScore?: number | null;
+  } | null;
+};
+
+type ServiceAvailability = "checking" | "available" | "unavailable";
+
+const ACTIVE_SESSION_KEY = "snowtrace_active_session_v1";
 
 const SUBMISSION_STAGES = [
   { id: "session", label: "Private session created", detail: "Context and browser preflight saved" },
@@ -158,6 +184,43 @@ function getAnonymousRiderId() {
   const created = `rider_${crypto.randomUUID()}`;
   window.localStorage.setItem(storageKey, created);
   return created;
+}
+
+function rememberActiveSession(sessionId: string) {
+  window.localStorage.setItem(ACTIVE_SESSION_KEY, JSON.stringify({ sessionId }));
+}
+
+function forgetActiveSession(sessionId?: string) {
+  if (!sessionId) {
+    window.localStorage.removeItem(ACTIVE_SESSION_KEY);
+    return;
+  }
+  try {
+    const stored = JSON.parse(window.localStorage.getItem(ACTIVE_SESSION_KEY) ?? "null") as { sessionId?: string } | null;
+    if (stored?.sessionId === sessionId) window.localStorage.removeItem(ACTIVE_SESSION_KEY);
+  } catch {
+    window.localStorage.removeItem(ACTIVE_SESSION_KEY);
+  }
+}
+
+function restoredInspection(video: SessionVideoSnapshot): VideoInspection | null {
+  if (!video.uploaded || !video.width || !video.height || !video.duration_seconds) return null;
+  const preflight = video.preflight ?? {};
+  const score = (value: unknown, fallback: number) => typeof value === "number" && Number.isFinite(value) ? value : fallback;
+  return {
+    role: video.role,
+    name: video.original_name,
+    sizeBytes: video.size_bytes,
+    durationSeconds: video.duration_seconds,
+    width: video.width,
+    height: video.height,
+    orientation: video.width > video.height ? "landscape" : video.width < video.height ? "portrait" : "square",
+    resolutionScore: score(preflight.resolutionScore, resolutionScore(video.width, video.height)),
+    durationScore: score(preflight.durationScore, scoreForRange(video.duration_seconds, 6, 20, 3, 30)),
+    exposureScore: typeof preflight.exposureScore === "number" ? preflight.exposureScore : null,
+    sharpnessScore: typeof preflight.sharpnessScore === "number" ? preflight.sharpnessScore : null,
+    previewUrl: video.playback_url,
+  };
 }
 
 function analyzePixels(data: Uint8ClampedArray, width: number, height: number) {
@@ -415,6 +478,8 @@ export function CoachApp() {
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [analysisRunId, setAnalysisRunId] = useState<string | null>(null);
   const [queueMessage, setQueueMessage] = useState("Waiting for the analysis worker.");
+  const [serviceAvailability, setServiceAvailability] = useState<ServiceAvailability>("checking");
+  const [isRestoringSession, setIsRestoringSession] = useState(false);
   const [analysisOutcome, setAnalysisOutcome] = useState<AnalysisOutcome | null>(null);
   const [isCheckingStatus, setIsCheckingStatus] = useState(false);
   const [realEvidence, setRealEvidence] = useState<EvidenceSnapshot | null>(null);
@@ -430,6 +495,7 @@ export function CoachApp() {
       setQueueMessage("The session exists, but no analysis run is attached.");
       return;
     }
+    setAnalysisRunId(snapshot.run.id);
     if (snapshot.run.status === "needs_rider" && snapshot.action) {
       setRiderAction(snapshot.action);
       setSelectedTracks({});
@@ -467,6 +533,7 @@ export function CoachApp() {
       evidence_ready: "Evidence is ready. Opening your report…",
     };
     setQueueMessage(stageMessages[snapshot.run.stage ?? ""] ?? `Analysis status: ${snapshot.run.status}.`);
+    setScreen("queued");
   }, []);
 
   const refreshQueue = useCallback(async (announce = true) => {
@@ -482,6 +549,72 @@ export function CoachApp() {
       if (announce) setIsCheckingStatus(false);
     }
   }, [applySessionSnapshot, sessionId]);
+
+  const checkServiceAvailability = useCallback(async () => {
+    setServiceAvailability("checking");
+    try {
+      const response = await fetch("/api/system-status", { cache: "no-store" });
+      const status = await readApiResponse<{ analysisAvailable: boolean }>(response);
+      setServiceAvailability(status.analysisAvailable ? "available" : "unavailable");
+    } catch {
+      setServiceAvailability("unavailable");
+    }
+  }, []);
+
+  useEffect(() => {
+    void checkServiceAvailability();
+  }, [checkServiceAvailability]);
+
+  useEffect(() => {
+    let active = true;
+    const restore = async () => {
+      let storedSessionId: string | null = null;
+      try {
+        const stored = JSON.parse(window.localStorage.getItem(ACTIVE_SESSION_KEY) ?? "null") as { sessionId?: string } | null;
+        if (stored?.sessionId && /^ses_[A-Za-z0-9-]{20,80}$/.test(stored.sessionId)) storedSessionId = stored.sessionId;
+      } catch {
+        forgetActiveSession();
+      }
+      if (!storedSessionId) {
+        if (active) setIsRestoringSession(false);
+        return;
+      }
+      if (active) setIsRestoringSession(true);
+      try {
+        const response = await fetch(`/api/sessions/${storedSessionId}`, { cache: "no-store" });
+        if (response.status === 404) {
+          forgetActiveSession(storedSessionId);
+          return;
+        }
+        const snapshot = await readApiResponse<SessionSnapshot>(response);
+        if (!snapshot.run) {
+          await fetch(`/api/sessions/${storedSessionId}`, { method: "DELETE" }).catch(() => undefined);
+          forgetActiveSession(storedSessionId);
+          return;
+        }
+        const restoredVideos = snapshot.videos.map(restoredInspection).filter((video): video is VideoInspection => video !== null);
+        const restoredReference = restoredVideos.find((video) => video.role === "reference") ?? null;
+        const restoredRider = restoredVideos.find((video) => video.role === "rider") ?? null;
+        if (!restoredReference || !restoredRider) {
+          forgetActiveSession(storedSessionId);
+          return;
+        }
+        if (!active) return;
+        setSessionId(storedSessionId);
+        setReference(restoredReference);
+        setRider(restoredRider);
+        setReferenceFile(null);
+        setRiderFile(null);
+        applySessionSnapshot(snapshot);
+      } catch {
+        if (active) setError("Your saved analysis could not be restored right now. Refresh to try again.");
+      } finally {
+        if (active) setIsRestoringSession(false);
+      }
+    };
+    void restore();
+    return () => { active = false; };
+  }, [applySessionSnapshot]);
 
   useEffect(() => {
     if (screen !== "queued" || !sessionId) return;
@@ -548,7 +681,7 @@ export function CoachApp() {
   }
 
   async function startLiveAnalysis() {
-    if (!reference || !rider || !referenceFile || !riderFile) return;
+    if (serviceAvailability !== "available" || !reference || !rider || !referenceFile || !riderFile) return;
     setSubmissionError(null);
     setSubmissionProgress(0);
     setRealEvidence(null);
@@ -594,6 +727,7 @@ export function CoachApp() {
       const created = await readApiResponse<CreatedSession>(createResponse);
       createdSessionId = created.sessionId;
       setSessionId(created.sessionId);
+      rememberActiveSession(created.sessionId);
 
       const referenceUpload = created.videos.find((video) => video.role === "reference");
       const riderUpload = created.videos.find((video) => video.role === "rider");
@@ -628,6 +762,7 @@ export function CoachApp() {
     } catch (cause) {
       if (createdSessionId) {
         await fetch(`/api/sessions/${createdSessionId}`, { method: "DELETE" }).catch(() => undefined);
+        forgetActiveSession(createdSessionId);
         setSessionId(null);
       }
       setSubmissionError(cause instanceof Error ? cause.message : "The analysis session could not be submitted.");
@@ -694,7 +829,12 @@ export function CoachApp() {
       setAnalysisOutcome(null);
       setRiderAction(null);
       setSelectedTracks({});
+      setReference(null);
+      setRider(null);
+      setReferenceFile(null);
+      setRiderFile(null);
       setQueueMessage("Session deleted.");
+      forgetActiveSession(sessionId);
       setScreen("upload");
     } catch (cause) {
       setQueueMessage(cause instanceof Error ? cause.message : "The private session could not be deleted.");
@@ -722,7 +862,16 @@ export function CoachApp() {
   }
 
   function reset() {
+    forgetActiveSession(sessionId ?? undefined);
     setScreen("upload");
+    setSessionId(null);
+    setAnalysisRunId(null);
+    setReference(null);
+    setRider(null);
+    setReferenceFile(null);
+    setRiderFile(null);
+    setRiderAction(null);
+    setSelectedTracks({});
     setActiveStage(0);
     setSubmissionError(null);
     setAnalysisOutcome(null);
@@ -743,7 +892,16 @@ export function CoachApp() {
         </div>
       </header>
 
-      {screen === "upload" && (
+      {isRestoringSession && (
+        <div className="processing-screen restore-screen">
+          <div className="processing-orbit" aria-hidden="true"><span /></div>
+          <span className="eyebrow">RESUMING SAVED SESSION</span>
+          <h1>Checking your analysis.</h1>
+          <p>Snowtrace is restoring the private session saved on this device.</p>
+        </div>
+      )}
+
+      {screen === "upload" && !isRestoringSession && (
         <div className="page-grid upload-screen">
           <section className="hero-copy">
             <div className="eyebrow-row">
@@ -778,6 +936,20 @@ export function CoachApp() {
           </section>
 
           <section className="upload-workspace">
+            {serviceAvailability !== "available" && (
+              <div className={`service-notice ${serviceAvailability}`} role="status">
+                <div>
+                  <span className="eyebrow">BETA ANALYSIS STATUS</span>
+                  <strong>{serviceAvailability === "checking" ? "Checking the video-intelligence worker…" : "New uploads are temporarily paused."}</strong>
+                  <p>{serviceAvailability === "checking"
+                    ? "Snowtrace will confirm capacity before any source video leaves this device."
+                    : "The MediaPipe worker is offline. You can review the filming guide, but Snowtrace will not accept or store a video until it is available."}</p>
+                </div>
+                {serviceAvailability === "unavailable" && (
+                  <button type="button" className="secondary-button" onClick={checkServiceAvailability}>Check again</button>
+                )}
+              </div>
+            )}
             <div className="goal-selector">
               <span className="eyebrow">WHAT ARE YOU WORKING ON?</span>
               <div className="goal-options">
@@ -826,7 +998,7 @@ export function CoachApp() {
             </div>
 
             {error && <p className="error-message" role="alert">{error}</p>}
-            <button type="button" className="primary-button" disabled={!canContinue} onClick={() => setScreen("readiness")}>
+            <button type="button" className="primary-button" disabled={!canContinue || serviceAvailability !== "available"} onClick={() => setScreen("readiness")}>
               Check analysis readiness <span aria-hidden="true">→</span>
             </button>
             <p className="privacy-line">Private by default · 30-day expiry recorded · Delete queued clips anytime</p>
@@ -842,7 +1014,7 @@ export function CoachApp() {
             </button>
             <span className="eyebrow">STEP 02 / 04 · VIDEO INTELLIGENCE</span>
             <h1>Analysis readiness</h1>
-            <p>This is a footage score, not a riding score. Pose-level checks remain pending until the analysis worker is connected.</p>
+            <p>This is a footage score, not a riding score. Pose-level checks run after the private upload.</p>
           </div>
 
           <div className="readiness-layout">
@@ -900,9 +1072,10 @@ export function CoachApp() {
           </div>
 
           <div className="readiness-actions">
-            <button type="button" className="primary-button centered-button" onClick={startLiveAnalysis}>
+            <button type="button" className="primary-button centered-button" disabled={serviceAvailability !== "available"} onClick={startLiveAnalysis}>
               Upload &amp; queue pose gate <span aria-hidden="true">→</span>
             </button>
+            {serviceAvailability !== "available" && <p className="service-inline-message">Upload is paused until the analysis worker passes its readiness check.</p>}
           </div>
         </div>
       )}
