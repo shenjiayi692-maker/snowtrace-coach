@@ -1,5 +1,6 @@
 import { env } from "cloudflare:workers";
 import { jsonError } from "../../../../lib/session-contract";
+import { readBearerToken, secureTokenMatches } from "../../../../lib/secure-token";
 
 export const dynamic = "force-dynamic";
 
@@ -15,37 +16,77 @@ type CallbackBody = {
 
 type RunRow = { id: string; session_id: string };
 
-async function tokenMatches(received: string, expected: string) {
-  const encoder = new TextEncoder();
-  const [receivedHash, expectedHash] = await Promise.all([
-    crypto.subtle.digest("SHA-256", encoder.encode(received)),
-    crypto.subtle.digest("SHA-256", encoder.encode(expected)),
-  ]);
-  const left = new Uint8Array(receivedHash);
-  const right = new Uint8Array(expectedHash);
-  let difference = left.length ^ right.length;
-  for (let index = 0; index < Math.max(left.length, right.length); index += 1) difference |= (left[index] ?? 0) ^ (right[index] ?? 0);
-  return difference === 0;
+const metricIds = new Set([
+  "knee_flexion_lead",
+  "knee_flexion_trail",
+  "pelvis_height",
+  "projected_inclination",
+  "fore_aft_pelvis",
+  "upper_lower_separation",
+  "lead_trail_differential",
+]);
+
+function finiteNumber(value: unknown, min: number, max: number) {
+  return typeof value === "number" && Number.isFinite(value) && value >= min && value <= max;
 }
 
-function validEvidence(value: unknown) {
-  if (!value || typeof value !== "object") return false;
+function sanitizePoseSnapshot(value: unknown) {
+  if (!value || typeof value !== "object") return null;
+  const snapshot = value as Record<string, unknown>;
+  if (!finiteNumber(snapshot.timestamp_ms, 0, 300_000) || !Array.isArray(snapshot.landmarks) || snapshot.landmarks.length !== 33) {
+    return null;
+  }
+  const landmarks = snapshot.landmarks.flatMap((value) => {
+    if (!value || typeof value !== "object") return [];
+    const point = value as Record<string, unknown>;
+    if (!finiteNumber(point.x, 0, 1) || !finiteNumber(point.y, 0, 1) || !finiteNumber(point.visibility, 0, 1)) return [];
+    return [{ x: point.x, y: point.y, visibility: point.visibility }];
+  });
+  if (landmarks.length !== 33) return null;
+  return { timestamp_ms: snapshot.timestamp_ms, landmarks };
+}
+
+function sanitizeEvidence(value: unknown): Record<string, unknown> | null {
+  if (!value || typeof value !== "object") return null;
   const item = value as Record<string, unknown>;
-  return typeof item.metric_id === "string"
-    && typeof item.rank === "number"
-    && ["initiation", "shaping", "apex", "completion"].includes(String(item.phase))
-    && typeof item.confidence === "number"
-    && typeof item.effect_size === "number"
-    && typeof item.reference_timestamp_ms === "number"
-    && typeof item.user_timestamp_ms === "number";
+  if (
+    typeof item.metric_id !== "string" || !metricIds.has(item.metric_id) ||
+    !Number.isInteger(item.rank) || !finiteNumber(item.rank, 1, 20) ||
+    !["initiation", "shaping", "apex", "completion"].includes(String(item.phase)) ||
+    !finiteNumber(item.confidence, 0, 1) || !finiteNumber(item.effect_size, 0, 100) ||
+    !finiteNumber(item.reference_timestamp_ms, 0, 300_000) || !finiteNumber(item.user_timestamp_ms, 0, 300_000) ||
+    !finiteNumber(item.reference_value, -10_000, 10_000) || !finiteNumber(item.user_value, -10_000, 10_000) ||
+    !finiteNumber(item.difference, -10_000, 10_000) ||
+    typeof item.unit !== "string" || item.unit.length > 40 ||
+    !Number.isInteger(item.paired_turns) || !finiteNumber(item.paired_turns, 1, 50)
+  ) return null;
+
+  const referencePose = item.reference_pose == null ? null : sanitizePoseSnapshot(item.reference_pose);
+  const userPose = item.user_pose == null ? null : sanitizePoseSnapshot(item.user_pose);
+  if ((item.reference_pose != null && !referencePose) || (item.user_pose != null && !userPose)) return null;
+  return {
+    metric_id: item.metric_id,
+    rank: item.rank,
+    phase: item.phase,
+    confidence: item.confidence,
+    effect_size: item.effect_size,
+    reference_timestamp_ms: item.reference_timestamp_ms,
+    user_timestamp_ms: item.user_timestamp_ms,
+    reference_value: item.reference_value,
+    user_value: item.user_value,
+    difference: item.difference,
+    unit: item.unit,
+    paired_turns: item.paired_turns,
+    reference_pose: referencePose,
+    user_pose: userPose,
+  };
 }
 
 export async function POST(request: Request, context: { params: Promise<{ analysisRunId: string }> }) {
   const { analysisRunId } = await context.params;
-  const authorization = request.headers.get("authorization");
-  const receivedToken = authorization?.startsWith("Bearer ") ? authorization.slice(7) : "";
+  const receivedToken = readBearerToken(request);
   if (!env.ANALYSIS_SERVICE_TOKEN) return jsonError("The analysis callback is not configured.", 503);
-  if (!receivedToken || !(await tokenMatches(receivedToken, env.ANALYSIS_SERVICE_TOKEN))) return jsonError("The analysis callback is not authorized.", 401);
+  if (!receivedToken || !(await secureTokenMatches(receivedToken, env.ANALYSIS_SERVICE_TOKEN))) return jsonError("The analysis callback is not authorized.", 401);
   const contentLength = Number(request.headers.get("content-length"));
   if (Number.isFinite(contentLength) && contentLength > 4 * 1024 * 1024) return jsonError("The analysis result is too large.", 413);
 
@@ -68,7 +109,7 @@ export async function POST(request: Request, context: { params: Promise<{ analys
   const stage = body.status === "completed" ? "evidence_ready" : body.status;
   const sessionStatus = body.status === "completed" ? "completed" : body.status === "needs_rider" ? "processing" : "failed";
   const errorCode = body.status === "rejected" ? "quality_rejected" : body.status === "failed" ? "analysis_failed" : null;
-  const evidence = (body.evidence ?? []).filter(validEvidence) as Array<Record<string, number | string>>;
+  const evidence = (body.evidence ?? []).map(sanitizeEvidence).filter((item): item is Record<string, unknown> => item !== null);
   const statements = [
     env.DB.prepare(
       `INSERT INTO analysis_outputs (id, analysis_run_id, status, result_json, created_at, updated_at)

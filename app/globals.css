@@ -1489,6 +1489,50 @@ input:focus-visible {
   background: var(--ink);
 }
 
+.pose-video-shell {
+  position: relative;
+  overflow: hidden;
+  background: var(--ink);
+}
+
+.pose-video-shell video {
+  aspect-ratio: auto;
+  object-fit: contain;
+}
+
+.pose-evidence-canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 120ms ease;
+}
+
+.pose-evidence-canvas.visible {
+  opacity: 0.92;
+}
+
+.pose-evidence-label {
+  position: absolute;
+  top: 10px;
+  left: 10px;
+  padding: 5px 7px;
+  background: rgba(8, 10, 12, 0.78);
+  color: var(--acid);
+  font-size: 0.55rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  line-height: 1;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.pose-evidence-label.visible {
+  opacity: 1;
+}
+
 .video-label {
   display: flex;
   justify-content: space-between;

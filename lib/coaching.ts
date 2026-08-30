@@ -1,5 +1,10 @@
 export type TurnPhase = "initiation" | "shaping" | "apex" | "completion";
 
+export type PoseSnapshot = {
+  timestamp_ms: number;
+  landmarks: Array<{ x: number; y: number; visibility: number }>;
+};
+
 export type EvidenceSnapshot = {
   metric_id: string;
   rank: number;
@@ -14,6 +19,8 @@ export type EvidenceSnapshot = {
     difference: number;
     unit: string;
     paired_turns: number;
+    reference_pose?: PoseSnapshot | null;
+    user_pose?: PoseSnapshot | null;
   };
 };
 

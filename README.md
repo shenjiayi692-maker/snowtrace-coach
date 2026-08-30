@@ -27,6 +27,8 @@ analysis service.
   selected-track re-run
 - Turn segmentation, phase normalization, confidence-aware metric comparison,
   and strict evidence thresholds
+- Evidence-frame pose snapshots rendered as synchronized skeleton overlays in
+  the Show Me comparison; whole-video landmark streams are not sent to the web
 - D1 schema for sessions, videos, tracks, turns, metrics, evidence, reports,
   drills, progression, and feedback; R2 binding reserved for source/proxy video
 - Authenticated, idempotent retention cleanup for expired source and proxy

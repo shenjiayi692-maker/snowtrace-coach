@@ -4,7 +4,7 @@ from collections import defaultdict
 
 import numpy as np
 
-from .contracts import ComparisonEvidence, MetricSeries, Turn, VideoAnalysisResult
+from .contracts import ComparisonEvidence, MetricSeries, PoseSnapshot, RiderTrack, Turn, VideoAnalysisResult
 
 MINIMUM_MEANINGFUL_DIFFERENCE = {
     "knee_flexion_lead": 8.0,
@@ -51,6 +51,8 @@ def compare_videos(reference: VideoAnalysisResult, rider: VideoAnalysisResult) -
             MINIMUM_MEANINGFUL_DIFFERENCE[metric_id],
         )
         if item and item.confidence >= 0.70 and item.effect_size >= 1.0 and item.paired_turns >= 2:
+            item.reference_pose = _pose_snapshot(reference.selected_track, item.reference_timestamp_ms)
+            item.user_pose = _pose_snapshot(rider.selected_track, item.user_timestamp_ms)
             evidence.append(item)
 
     evidence.sort(key=lambda item: item.effect_size * item.confidence, reverse=True)
@@ -164,3 +166,20 @@ def _difference_consistency(
 
 def _phase_timestamp(turn: Turn, phase_index: int) -> int:
     return int(round(turn.start_ms + (turn.end_ms - turn.start_ms) * phase_index / 100.0))
+
+
+def _pose_snapshot(track: RiderTrack | None, timestamp_ms: int) -> PoseSnapshot | None:
+    if not track or not track.observations:
+        return None
+    observation = min(track.observations, key=lambda item: abs(item.timestamp_ms - timestamp_ms))
+    landmarks = [
+        {
+            "x": round(float(np.clip(point[0], 0.0, 1.0)), 5),
+            "y": round(float(np.clip(point[1], 0.0, 1.0)), 5),
+            "visibility": round(float(np.clip(point[3], 0.0, 1.0)), 4),
+        }
+        for point in observation.landmarks[:33]
+    ]
+    if len(landmarks) != 33:
+        return None
+    return PoseSnapshot(timestamp_ms=observation.timestamp_ms, landmarks=landmarks)

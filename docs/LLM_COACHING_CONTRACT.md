@@ -29,6 +29,10 @@ evidence states.
 Send structured text only. Do not send source video, pose landmarks, user email,
 filenames, or free-form reference-framework doctrine.
 
+The analysis callback may attach one 2D pose snapshot for each Show Me evidence
+frame. Those snapshots are renderer-only visual evidence and are deliberately
+removed from the LLM input envelope.
+
 ```json
 {
   "schema_version": "coach-input-v1",

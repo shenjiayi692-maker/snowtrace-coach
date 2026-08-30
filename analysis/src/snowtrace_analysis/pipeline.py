@@ -81,4 +81,5 @@ class AnalysisPipeline:
             quality=quality,
             metrics=metrics,
             status="rejected" if quality.status == "rejected" else "completed",
+            selected_track=selected,
         )

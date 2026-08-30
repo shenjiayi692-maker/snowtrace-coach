@@ -97,6 +97,12 @@ class MetricSeries:
 
 
 @dataclass(slots=True)
+class PoseSnapshot:
+    timestamp_ms: int
+    landmarks: list[dict[str, float]]
+
+
+@dataclass(slots=True)
 class VideoAnalysisResult:
     role: VideoRole
     camera_mode: CameraMode
@@ -110,7 +116,8 @@ class VideoAnalysisResult:
     quality: QualityGateResult | None
     metrics: list[MetricSeries]
     status: Literal["needs_rider", "rejected", "completed"]
-    pipeline_version: str = "video-intelligence-v0.1"
+    selected_track: RiderTrack | None = field(default=None, repr=False)
+    pipeline_version: str = "video-intelligence-v0.2"
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -144,6 +151,8 @@ class ComparisonEvidence:
     user_timestamp_ms: int
     unit: str
     paired_turns: int
+    reference_pose: PoseSnapshot | None = None
+    user_pose: PoseSnapshot | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)

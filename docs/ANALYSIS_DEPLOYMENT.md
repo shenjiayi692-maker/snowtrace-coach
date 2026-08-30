@@ -60,7 +60,8 @@ Before inviting riders:
 2. Upload a known short reference/rider pair through the production Site.
 3. Confirm the Site automatically moves from queued to one of four honest
    terminal states: rider selection, recapture, no reliable gap, or evidence.
-4. For evidence, confirm Show Me seeks both source clips to the returned phase.
+4. For evidence, confirm Show Me seeks both source clips to the returned phase
+   and shows the skeleton only while each player is near its evidence frame.
 5. Delete the session and confirm it is no longer readable.
 6. Run the retention operation against a deliberately expired test object and
    confirm both the source and proxy objects are absent afterward.

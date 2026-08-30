@@ -39,6 +39,8 @@ group.
 3. Snowtrace runs browser preflight, upload, pose quality, rider selection when
    necessary, turn alignment, and confidence filtering.
 4. If accepted, rider opens Show Me before reading the possible explanation.
+   Confirm the evidence-frame skeleton sits on the intended rider and disappears
+   after scrubbing away from that moment.
 5. Rider reads one drill and submits the three in-product feedback answers.
 6. Within 3–7 days, invite the rider to film the same goal again after trying
    the drill. Record whether they upload a second clip; do not count verbal

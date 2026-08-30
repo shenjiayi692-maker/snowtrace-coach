@@ -11,7 +11,7 @@ import {
   type VideoRole,
 } from "../lib/analysis";
 import { CONSENT_VERSION, MAX_VIDEO_BYTES } from "../lib/session-contract";
-import { buildCoachingView, type EvidenceSnapshot, type TurnPhase } from "../lib/coaching";
+import { buildCoachingView, type EvidenceSnapshot, type PoseSnapshot, type TurnPhase } from "../lib/coaching";
 
 type Screen = "upload" | "readiness" | "processing" | "queued" | "select-rider" | "outcome" | "report";
 type Goal = "medium" | "short" | "dynamic";
@@ -457,6 +457,102 @@ function ContextSelector({
 
 function StatusDot({ state }: { state: ReturnType<typeof qualityState> }) {
   return <span className={`status-dot ${state}`} aria-hidden="true" />;
+}
+
+const POSE_CONNECTIONS: Array<[number, number]> = [
+  [11, 12], [11, 23], [12, 24], [23, 24],
+  [11, 13], [13, 15], [12, 14], [14, 16],
+  [23, 25], [25, 27], [27, 29], [29, 31], [27, 31],
+  [24, 26], [26, 28], [28, 30], [30, 32], [28, 32],
+];
+
+const POSE_LANDMARKS = new Set(POSE_CONNECTIONS.flat());
+
+function PoseEvidenceVideo({
+  videoRef,
+  src,
+  snapshot,
+  evidenceTimestampMs,
+  onLoadedMetadata,
+}: {
+  videoRef: React.RefObject<HTMLVideoElement | null>;
+  src: string;
+  snapshot: PoseSnapshot | null | undefined;
+  evidenceTimestampMs: number;
+  onLoadedMetadata: () => void;
+}) {
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const [nearEvidenceFrame, setNearEvidenceFrame] = useState(true);
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    const context = canvas?.getContext("2d");
+    if (!canvas || !context) return;
+    context.clearRect(0, 0, canvas.width, canvas.height);
+    if (!snapshot) return;
+
+    const point = (index: number) => snapshot.landmarks[index];
+    context.strokeStyle = "#d8ff42";
+    context.fillStyle = "#d8ff42";
+    context.lineWidth = 5;
+    context.lineCap = "round";
+    context.lineJoin = "round";
+    context.shadowColor = "rgba(10, 12, 14, 0.72)";
+    context.shadowBlur = 8;
+
+    for (const [from, to] of POSE_CONNECTIONS) {
+      const first = point(from);
+      const second = point(to);
+      if (!first || !second || first.visibility < 0.35 || second.visibility < 0.35) continue;
+      context.beginPath();
+      context.moveTo(first.x * canvas.width, first.y * canvas.height);
+      context.lineTo(second.x * canvas.width, second.y * canvas.height);
+      context.stroke();
+    }
+    for (const index of POSE_LANDMARKS) {
+      const landmark = point(index);
+      if (!landmark || landmark.visibility < 0.35) continue;
+      context.beginPath();
+      context.arc(landmark.x * canvas.width, landmark.y * canvas.height, 7, 0, Math.PI * 2);
+      context.fill();
+    }
+  }, [snapshot]);
+
+  const updateOverlayVisibility = (video: HTMLVideoElement) => {
+    setNearEvidenceFrame(Math.abs(video.currentTime * 1000 - evidenceTimestampMs) <= 300);
+  };
+
+  return (
+    <div className="pose-video-shell">
+      <video
+        ref={videoRef}
+        src={src}
+        muted
+        playsInline
+        controls
+        preload="metadata"
+        onLoadedMetadata={(event) => {
+          const video = event.currentTarget;
+          onLoadedMetadata();
+          window.setTimeout(() => updateOverlayVisibility(video), 0);
+        }}
+        onTimeUpdate={(event) => updateOverlayVisibility(event.currentTarget)}
+        onSeeked={(event) => updateOverlayVisibility(event.currentTarget)}
+      />
+      {snapshot && (
+        <>
+          <canvas
+            ref={canvasRef}
+            className={`pose-evidence-canvas ${nearEvidenceFrame ? "visible" : ""}`}
+            width="1000"
+            height="1000"
+            aria-hidden="true"
+          />
+          <span className={`pose-evidence-label ${nearEvidenceFrame ? "visible" : ""}`}>POSE · EVIDENCE FRAME</span>
+        </>
+      )}
+    </div>
+  );
 }
 
 export function CoachApp() {
@@ -1332,12 +1428,24 @@ export function CoachApp() {
             <div className="video-grid">
               <figure>
                 <div className="video-label"><span>REFERENCE</span><b>{formatTimestamp(activeReferenceTimestamp)}</b></div>
-                <video ref={referenceVideoRef} src={reference.previewUrl} muted playsInline controls preload="metadata" onLoadedMetadata={seekEvidence} />
+                <PoseEvidenceVideo
+                  videoRef={referenceVideoRef}
+                  src={reference.previewUrl}
+                  snapshot={realEvidence.details.reference_pose}
+                  evidenceTimestampMs={activeReferenceTimestamp}
+                  onLoadedMetadata={seekEvidence}
+                />
                 <figcaption>{reference.name}</figcaption>
               </figure>
               <figure>
                 <div className="video-label"><span>YOUR RIDE</span><b>{formatTimestamp(activeRiderTimestamp)}</b></div>
-                <video ref={riderVideoRef} src={rider.previewUrl} muted playsInline controls preload="metadata" onLoadedMetadata={seekEvidence} />
+                <PoseEvidenceVideo
+                  videoRef={riderVideoRef}
+                  src={rider.previewUrl}
+                  snapshot={realEvidence.details.user_pose}
+                  evidenceTimestampMs={activeRiderTimestamp}
+                  onLoadedMetadata={seekEvidence}
+                />
                 <figcaption>{rider.name}</figcaption>
               </figure>
             </div>

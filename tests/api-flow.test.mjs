@@ -128,6 +128,18 @@ function signedMediaPath(method, videoId, runId, purpose, expires) {
   return `/api/analysis-media/${videoId}?run=${encodeURIComponent(runId)}&purpose=${purpose}&expires=${expires}&sig=${signature}`;
 }
 
+function poseSnapshot(timestampMs, xOffset = 0) {
+  return {
+    timestamp_ms: timestampMs,
+    landmarks: Array.from({ length: 33 }, (_, index) => ({
+      x: Math.min(0.95, 0.2 + index * 0.015 + xOffset),
+      y: Math.min(0.95, 0.1 + index * 0.02),
+      visibility: 0.9,
+      z: -0.1,
+    })),
+  };
+}
+
 test("creates, uploads, queues, reads and deletes a real analysis session", async () => {
   const sourceBytes = {
     reference: new TextEncoder().encode("reference-video"),
@@ -290,6 +302,9 @@ test("creates, uploads, queues, reads and deletes a real analysis session", asyn
         user_timestamp_ms: 6900,
         unit: "deg",
         paired_turns: 3,
+        reference_pose: poseSnapshot(8400),
+        user_pose: poseSnapshot(6900, 0.02),
+        ignored_worker_field: "not persisted",
       }],
     }),
   });
@@ -301,6 +316,10 @@ test("creates, uploads, queues, reads and deletes a real analysis session", asyn
   const status = await statusResponse.json();
   assert.equal(status.run.status, "completed");
   assert.equal(status.evidence[0].metric_id, "knee_flexion_lead");
+  assert.equal(status.evidence[0].details.reference_pose.landmarks.length, 33);
+  assert.equal(status.evidence[0].details.reference_pose.timestamp_ms, 8400);
+  assert.equal("z" in status.evidence[0].details.reference_pose.landmarks[0], false);
+  assert.equal("ignored_worker_field" in status.evidence[0].details, false);
   assert.deepEqual(status.videos.map((video) => video.uploaded).sort(), [true, true]);
   assert.ok(status.videos.every((video) => video.playback_url.includes(created.sessionId)));
 
@@ -386,7 +405,7 @@ test("reports worker availability without exposing runtime secrets", async () =>
   assert.deepEqual(status, {
     analysisAvailable: true,
     productScope: "snowboard_carving",
-    pipelineVersion: "video-intelligence-v0.1",
+    pipelineVersion: "video-intelligence-v0.2",
   });
   assert.equal(JSON.stringify(status).includes("callback-test-token"), false);
 
