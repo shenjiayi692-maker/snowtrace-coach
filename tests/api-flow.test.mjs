@@ -16,7 +16,8 @@ class D1StatementMock {
   }
 
   run() {
-    return this.database.prepare(this.sql).run(...this.values);
+    const result = this.database.prepare(this.sql).run(...this.values);
+    return { success: true, meta: result };
   }
 
   first() {
@@ -78,9 +79,10 @@ class R2Mock {
 }
 
 let worker;
+let database;
 
 before(async () => {
-  const database = new DatabaseSync(":memory:");
+  database = new DatabaseSync(":memory:");
   database.exec("PRAGMA foreign_keys = ON");
   const migrationsRoot = new URL("../drizzle/", import.meta.url);
   const migrationFiles = (await readdir(migrationsRoot)).filter((file) => file.endsWith(".sql")).sort();
@@ -95,6 +97,7 @@ before(async () => {
     ANALYSIS_SERVICE_TOKEN: "callback-test-token",
     ANALYSIS_SIGNING_SECRET: "media-signing-test-secret",
     BETA_METRICS_TOKEN: "beta-metrics-test-token",
+    BETA_OPS_TOKEN: "beta-ops-test-token",
   };
 
   const nativeFetch = globalThis.fetch;
@@ -135,6 +138,11 @@ test("creates, uploads, queues, reads and deletes a real analysis session", asyn
     headers: { "content-type": "application/json" },
     body: JSON.stringify({
       anonymousId: "rider_1234567890abcdef",
+      consent: {
+        version: "beta-consent-v1",
+        adultAndRightsConfirmed: true,
+        retentionAcknowledged: true,
+      },
       goal: "medium",
       cameraMode: "fixed",
       viewAngle: "three-quarter",
@@ -167,6 +175,10 @@ test("creates, uploads, queues, reads and deletes a real analysis session", asyn
   const created = await sessionResponse.json();
   assert.match(created.sessionId, /^ses_/);
   assert.equal(created.videos.length, 2);
+  assert.equal(
+    database.prepare("SELECT consent_version FROM profiles WHERE anonymous_id = ?").get("rider_1234567890abcdef").consent_version,
+    "beta-consent-v1",
+  );
 
   for (const video of created.videos) {
     const bytes = sourceBytes[video.role];
@@ -380,4 +392,77 @@ test("reports worker availability without exposing runtime secrets", async () =>
 
   const metricsResponse = await fetchApp("http://snowtrace.test/api/beta/metrics");
   assert.equal(metricsResponse.status, 401);
+});
+
+test("requires the current video consent before creating a session", async () => {
+  const response = await fetchApp("http://snowtrace.test/api/sessions", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      anonymousId: "rider_missing_consent_1234",
+      goal: "medium",
+      cameraMode: "fixed",
+      viewAngle: "three-quarter",
+      stance: "regular",
+      videos: [],
+    }),
+  });
+  assert.equal(response.status, 400);
+  assert.deepEqual(await response.json(), {
+    error: "Confirm the beta video permissions and retention terms before uploading.",
+  });
+});
+
+test("deletes expired source and proxy objects through the protected retention operation", async () => {
+  const now = new Date().toISOString();
+  database.prepare(
+    "INSERT INTO profiles (id, anonymous_id, locale, stance, level, consent_version, created_at, updated_at) VALUES (?, ?, 'en', 'regular', 'intermediate', 'beta-consent-v1', ?, ?)",
+  ).run("pro_retention", "rider_retention_123456", now, now);
+  database.prepare(
+    "INSERT INTO progressions (id, profile_id, goal, framework, status, created_at, updated_at) VALUES (?, ?, 'medium', 'none', 'active', ?, ?)",
+  ).run("pgs_retention", "pro_retention", now, now);
+  database.prepare(
+    "INSERT INTO sessions (id, progression_id, camera_mode, view_angle, status, created_at, updated_at) VALUES (?, ?, 'fixed', 'three-quarter', 'completed', ?, ?)",
+  ).run("ses_retention", "pgs_retention", now, now);
+  database.prepare(
+    `INSERT INTO videos
+      (id, session_id, role, object_key, proxy_object_key, original_name, content_type, size_bytes, expires_at, created_at, updated_at)
+     VALUES (?, ?, 'rider', ?, ?, 'expired.mp4', 'video/mp4', 5, ?, ?, ?)`,
+  ).run("vid_retention", "ses_retention", "source/expired", "proxy/expired", "2020-01-01T00:00:00.000Z", now, now);
+
+  const bucket = globalThis.__snowtraceCloudflareEnv.VIDEOS;
+  await bucket.put("source/expired", new TextEncoder().encode("source"), {});
+  await bucket.put("proxy/expired", new TextEncoder().encode("proxy"), {});
+
+  const unauthorized = await fetchApp("http://snowtrace.test/api/ops/cleanup", { method: "POST" });
+  assert.equal(unauthorized.status, 401);
+  assert.ok(await bucket.head("source/expired"));
+
+  const cleanup = await fetchApp("http://snowtrace.test/api/ops/cleanup", {
+    method: "POST",
+    headers: { authorization: "Bearer beta-ops-test-token", "content-type": "application/json" },
+    body: JSON.stringify({ limit: 50 }),
+  });
+  assert.equal(cleanup.status, 200, await cleanup.clone().text());
+  assert.deepEqual(await cleanup.json(), {
+    selected: 1,
+    videosMarkedDeleted: 1,
+    objectKeysDeleted: 2,
+    failures: 0,
+  });
+  assert.equal(await bucket.head("source/expired"), null);
+  assert.equal(await bucket.head("proxy/expired"), null);
+  assert.ok(database.prepare("SELECT deleted_at FROM videos WHERE id = ?").get("vid_retention").deleted_at);
+
+  const repeat = await fetchApp("http://snowtrace.test/api/ops/cleanup", {
+    method: "POST",
+    headers: { authorization: "Bearer beta-ops-test-token" },
+  });
+  assert.equal(repeat.status, 200);
+  assert.deepEqual(await repeat.json(), {
+    selected: 0,
+    videosMarkedDeleted: 0,
+    objectKeysDeleted: 0,
+    failures: 0,
+  });
 });

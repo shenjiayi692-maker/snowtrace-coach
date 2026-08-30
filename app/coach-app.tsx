@@ -10,7 +10,7 @@ import {
   type VideoInspection,
   type VideoRole,
 } from "../lib/analysis";
-import { MAX_VIDEO_BYTES } from "../lib/session-contract";
+import { CONSENT_VERSION, MAX_VIDEO_BYTES } from "../lib/session-contract";
 import { buildCoachingView, type EvidenceSnapshot, type TurnPhase } from "../lib/coaching";
 
 type Screen = "upload" | "readiness" | "processing" | "queued" | "select-rider" | "outcome" | "report";
@@ -471,6 +471,8 @@ export function CoachApp() {
   const [camera, setCamera] = useState("fixed");
   const [view, setView] = useState("three-quarter");
   const [stance, setStance] = useState("regular");
+  const [adultAndRightsConfirmed, setAdultAndRightsConfirmed] = useState(false);
+  const [retentionAcknowledged, setRetentionAcknowledged] = useState(false);
   const [activeStage, setActiveStage] = useState(0);
   const [activeMoment, setActiveMoment] = useState<TurnPhase>("apex");
   const [submissionProgress, setSubmissionProgress] = useState(0);
@@ -644,7 +646,13 @@ export function CoachApp() {
     () => videos.flatMap((video) => buildPreflightChecks(video).map((check) => ({ ...check, role: video.role }))),
     [videos],
   );
-  const canContinue = Boolean(reference && rider && !busyRole);
+  const canContinue = Boolean(
+    reference &&
+    rider &&
+    !busyRole &&
+    adultAndRightsConfirmed &&
+    retentionAcknowledged,
+  );
   const coaching = useMemo(() => realEvidence ? buildCoachingView(realEvidence) : null, [realEvidence]);
   const activeReferenceTimestamp = realEvidence?.reference_timestamp_ms ?? 0;
   const activeRiderTimestamp = realEvidence?.user_timestamp_ms ?? 0;
@@ -681,7 +689,15 @@ export function CoachApp() {
   }
 
   async function startLiveAnalysis() {
-    if (serviceAvailability !== "available" || !reference || !rider || !referenceFile || !riderFile) return;
+    if (
+      serviceAvailability !== "available" ||
+      !reference ||
+      !rider ||
+      !referenceFile ||
+      !riderFile ||
+      !adultAndRightsConfirmed ||
+      !retentionAcknowledged
+    ) return;
     setSubmissionError(null);
     setSubmissionProgress(0);
     setRealEvidence(null);
@@ -700,6 +716,11 @@ export function CoachApp() {
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
           anonymousId: getAnonymousRiderId(),
+          consent: {
+            version: CONSENT_VERSION,
+            adultAndRightsConfirmed,
+            retentionAcknowledged,
+          },
           goal,
           cameraMode: camera,
           viewAngle: view,
@@ -833,6 +854,8 @@ export function CoachApp() {
       setRider(null);
       setReferenceFile(null);
       setRiderFile(null);
+      setAdultAndRightsConfirmed(false);
+      setRetentionAcknowledged(false);
       setQueueMessage("Session deleted.");
       forgetActiveSession(sessionId);
       setScreen("upload");
@@ -870,6 +893,8 @@ export function CoachApp() {
     setRider(null);
     setReferenceFile(null);
     setRiderFile(null);
+    setAdultAndRightsConfirmed(false);
+    setRetentionAcknowledged(false);
     setRiderAction(null);
     setSelectedTracks({});
     setActiveStage(0);
@@ -997,11 +1022,31 @@ export function CoachApp() {
               />
             </div>
 
+            <fieldset className="consent-card">
+              <legend>Before uploading</legend>
+              <label>
+                <input
+                  type="checkbox"
+                  checked={adultAndRightsConfirmed}
+                  onChange={(event) => setAdultAndRightsConfirmed(event.target.checked)}
+                />
+                <span>I am 18 or older and I have permission to use these clips, including people visible in them.</span>
+              </label>
+              <label>
+                <input
+                  type="checkbox"
+                  checked={retentionAcknowledged}
+                  onChange={(event) => setRetentionAcknowledged(event.target.checked)}
+                />
+                <span>I understand source clips are scheduled for deletion after 30 days, and I can delete them sooner.</span>
+              </label>
+            </fieldset>
+
             {error && <p className="error-message" role="alert">{error}</p>}
             <button type="button" className="primary-button" disabled={!canContinue || serviceAvailability !== "available"} onClick={() => setScreen("readiness")}>
               Check analysis readiness <span aria-hidden="true">→</span>
             </button>
-            <p className="privacy-line">Private by default · 30-day expiry recorded · Delete queued clips anytime</p>
+            <p className="privacy-line">Private source storage · 30-day deletion schedule · Delete queued clips anytime</p>
           </section>
         </div>
       )}

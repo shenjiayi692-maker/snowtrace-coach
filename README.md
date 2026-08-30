@@ -18,7 +18,8 @@ analysis service.
   image clarity before upload
 - Real session creation, D1 persistence, streaming R2 uploads, upload-integrity
   checks, idempotent analysis queueing, automatic status refresh, device-local
-  session recovery, ranged source playback, and source deletion
+  session recovery, ranged source playback, explicit beta consent, and source
+  deletion
 - Replaceable Python video-intelligence service using FFmpeg, OpenCV, and the
   official MediaPipe Pose Landmarker task model
 - Multi-person pose tracking with an explicit rider-selection state when the
@@ -28,6 +29,8 @@ analysis service.
   and strict evidence thresholds
 - D1 schema for sessions, videos, tracks, turns, metrics, evidence, reports,
   drills, progression, and feedback; R2 binding reserved for source/proxy video
+- Authenticated, idempotent retention cleanup for expired source and proxy
+  objects, with an opportunistic bounded pass during session creation
 
 The MVP is snowboard carving only. It does not claim force, pressure, exact
 board edge angle, or physically accurate 3D measurements. It does not train a

@@ -79,6 +79,28 @@ answers. The bearer-token-protected `/api/beta/metrics` endpoint summarizes the
 funnel. Store `BETA_METRICS_TOKEN` in Sites runtime settings; never place it in
 the beta issue log or a URL.
 
+Before any beta upload, the interface requires the rider to confirm that they
+are at least 18, have permission to use both clips (including visible people),
+and understand the 30-day source-video retention period. The server rejects a
+session unless the current consent version is present and records that version
+on the anonymous profile. Do not collect videos through a side channel that
+bypasses this gate.
+
+## Source-video retention operation
+
+Set an independent `BETA_OPS_TOKEN` in Sites runtime settings. Once per day,
+send an authenticated `POST` request to `/api/ops/cleanup` with the token in an
+`Authorization: Bearer ...` header. An optional JSON body such as
+`{"limit":100}` bounds the batch from 1 to 200 videos. The operation deletes
+both source and proxy objects whose 30-day expiry has passed, then records
+`deleted_at` while retaining de-identified product evidence and funnel data.
+
+The cleanup is idempotent and a small batch also runs opportunistically before
+a new session is created. The daily operation is still required so deletion
+does not depend on future rider activity. Review the returned `failures` count;
+any nonzero value must be investigated and retried before accepting more beta
+uploads. Never put the operations token in a URL, issue log, or client code.
+
 Keep a separate de-identified issue log with rider number, device/browser,
 camera mode, failure stage, visible symptom, resolution, and whether it blocked
 completion. Do not copy source videos into the issue log.

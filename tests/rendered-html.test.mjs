@@ -45,7 +45,9 @@ test("server-renders the Snowtrace vertical slice", async () => {
   assert.match(html, /Reference video/);
   assert.match(html, /Rider video/);
   assert.match(html, /Check analysis readiness/);
-  assert.match(html, /Private by default/);
+  assert.match(html, /Private source storage/);
+  assert.match(html, /I am 18 or older and I have permission to use these clips/);
+  assert.match(html, /scheduled for deletion after 30 days/);
   assert.doesNotMatch(html, /codex-preview|react-loading-skeleton|Your site is taking shape/i);
 });
 
@@ -89,6 +91,11 @@ test("does not create a valid session while the analysis worker is offline", asy
     headers: { "content-type": "application/json" },
     body: JSON.stringify({
       anonymousId: "rider_1234567890abcdef",
+      consent: {
+        version: "beta-consent-v1",
+        adultAndRightsConfirmed: true,
+        retentionAcknowledged: true,
+      },
       goal: "medium",
       cameraMode: "fixed",
       viewAngle: "three-quarter",

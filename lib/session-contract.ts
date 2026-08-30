@@ -4,6 +4,7 @@ import type { VideoRole } from "./analysis";
 // ceiling. A later multipart S3 upload path can raise this without changing the
 // analysis contract.
 export const MAX_VIDEO_BYTES = 95 * 1024 * 1024;
+export const CONSENT_VERSION = "beta-consent-v1";
 
 export type SessionVideoInput = {
   role: VideoRole;
@@ -23,6 +24,11 @@ export type SessionVideoInput = {
 
 export type CreateSessionInput = {
   anonymousId: string;
+  consent: {
+    version: typeof CONSENT_VERSION;
+    adultAndRightsConfirmed: true;
+    retentionAcknowledged: true;
+  };
   goal: "medium" | "short" | "dynamic";
   cameraMode: "fixed" | "follow";
   viewAngle: "three-quarter" | "side" | "front-rear";
@@ -85,6 +91,15 @@ export function parseCreateSessionInput(input: unknown): ParseResult {
   if (typeof value.anonymousId !== "string" || !/^[A-Za-z0-9_-]{16,128}$/.test(value.anonymousId)) {
     return { ok: false, error: "A valid anonymous rider ID is required." };
   }
+  const consent = value.consent as Record<string, unknown> | null;
+  if (
+    !consent ||
+    consent.version !== CONSENT_VERSION ||
+    consent.adultAndRightsConfirmed !== true ||
+    consent.retentionAcknowledged !== true
+  ) {
+    return { ok: false, error: "Confirm the beta video permissions and retention terms before uploading." };
+  }
   if (typeof value.goal !== "string" || !goals.has(value.goal)) return { ok: false, error: "Choose a supported carving goal." };
   if (typeof value.cameraMode !== "string" || !cameras.has(value.cameraMode)) return { ok: false, error: "Choose a supported camera mode." };
   if (typeof value.viewAngle !== "string" || !views.has(value.viewAngle)) return { ok: false, error: "Choose a supported view angle." };
@@ -102,6 +117,11 @@ export function parseCreateSessionInput(input: unknown): ParseResult {
     ok: true,
     value: {
       anonymousId: value.anonymousId,
+      consent: {
+        version: CONSENT_VERSION,
+        adultAndRightsConfirmed: true,
+        retentionAcknowledged: true,
+      },
       goal: value.goal as CreateSessionInput["goal"],
       cameraMode: value.cameraMode as CreateSessionInput["cameraMode"],
       viewAngle: value.viewAngle as CreateSessionInput["viewAngle"],

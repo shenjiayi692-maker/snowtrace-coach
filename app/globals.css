@@ -512,6 +512,46 @@ input:focus-visible {
   font-weight: 720;
 }
 
+.consent-card {
+  margin: 14px 0 0;
+  padding: 15px 16px 14px;
+  border: 1px solid var(--line);
+}
+
+.consent-card legend {
+  padding: 0 6px;
+  color: var(--muted);
+  font-size: 0.62rem;
+  font-weight: 760;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.consent-card label {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  font-size: 0.75rem;
+  line-height: 1.45;
+}
+
+.consent-card label + label {
+  margin-top: 10px;
+}
+
+.consent-card input {
+  width: 17px;
+  height: 17px;
+  margin: 1px 0 0;
+  accent-color: var(--ink);
+  flex: 0 0 auto;
+}
+
+.consent-card input:focus-visible {
+  outline: 2px solid var(--ink);
+  outline-offset: 3px;
+}
+
 .primary-button,
 .secondary-button {
   min-height: 56px;

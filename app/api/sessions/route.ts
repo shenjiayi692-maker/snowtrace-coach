@@ -1,6 +1,7 @@
 import { env } from "cloudflare:workers";
 import { analysisServiceConfigured } from "../../../lib/runtime-capabilities";
 import { jsonError, parseCreateSessionInput } from "../../../lib/session-contract";
+import { cleanupExpiredVideos } from "../../../lib/video-retention";
 
 export const dynamic = "force-dynamic";
 
@@ -27,6 +28,12 @@ export async function POST(request: Request) {
     return jsonError("The beta analysis worker is temporarily unavailable. No video was uploaded.", 503);
   }
 
+  try {
+    await cleanupExpiredVideos(env, new Date().toISOString(), 20);
+  } catch (error) {
+    console.error("opportunistic_video_cleanup_failed", error);
+  }
+
   const input = parsed.value;
   const profileId = await stableProfileId(input.anonymousId);
   const progressionId = id("pgs");
@@ -39,10 +46,13 @@ export async function POST(request: Request) {
 
   const statements = [
     env.DB.prepare(
-      `INSERT INTO profiles (id, anonymous_id, locale, stance, level, created_at, updated_at)
-       VALUES (?, ?, 'en', ?, 'intermediate', ?, ?)
-       ON CONFLICT(anonymous_id) DO UPDATE SET stance = excluded.stance, updated_at = excluded.updated_at`,
-    ).bind(profileId, input.anonymousId, input.stance, now, now),
+      `INSERT INTO profiles (id, anonymous_id, locale, stance, level, consent_version, created_at, updated_at)
+       VALUES (?, ?, 'en', ?, 'intermediate', ?, ?, ?)
+       ON CONFLICT(anonymous_id) DO UPDATE SET
+         stance = excluded.stance,
+         consent_version = excluded.consent_version,
+         updated_at = excluded.updated_at`,
+    ).bind(profileId, input.anonymousId, input.stance, input.consent.version, now, now),
     env.DB.prepare(
       `INSERT INTO progressions (id, profile_id, goal, framework, reference_video_id, status, created_at, updated_at)
        VALUES (?, ?, ?, 'none', ?, 'active', ?, ?)`,
