@@ -286,6 +286,47 @@ test("creates, uploads, queues, reads and deletes a real analysis session", asyn
   assert.equal(metrics.coaching.helpfulOrPartlyPct, 100);
   assert.equal(metrics.coaching.drillIntentYesPct, 100);
 
+  const qualityPayload = {
+    status: "rejected",
+    readiness_score: 42,
+    hard_failures: ["rider_too_small"],
+    checks: [{ id: "rider_size", label: "Rider size", score: 31, status: "blocked", detail: "Median rider height 9% of frame" }],
+    allowed_metrics: [],
+    recapture_instructions: ["Move the camera closer so the rider occupies at least 20% of frame height."],
+  };
+  const noEvidenceCallback = await fetchApp(`http://snowtrace.test/api/analysis-callback/${queued.analysisRunId}`, {
+    method: "POST",
+    headers: { "authorization": "Bearer callback-test-token", "content-type": "application/json" },
+    body: JSON.stringify({
+      analysis_id: queued.analysisRunId,
+      status: "completed",
+      reference: { status: "completed", quality: { ...qualityPayload, status: "limited", readiness_score: 70, hard_failures: [] } },
+      rider: { status: "completed", quality: { ...qualityPayload, status: "limited", readiness_score: 68, hard_failures: [] } },
+      evidence: [],
+    }),
+  });
+  assert.equal(noEvidenceCallback.status, 200);
+  const noEvidenceSnapshot = await (await fetchApp(new URL(created.statusUrl, "http://snowtrace.test"))).json();
+  assert.equal(noEvidenceSnapshot.outcome.kind, "no_evidence");
+  assert.equal(noEvidenceSnapshot.outcome.retryable, false);
+
+  const rejectedCallback = await fetchApp(`http://snowtrace.test/api/analysis-callback/${queued.analysisRunId}`, {
+    method: "POST",
+    headers: { "authorization": "Bearer callback-test-token", "content-type": "application/json" },
+    body: JSON.stringify({
+      analysis_id: queued.analysisRunId,
+      status: "rejected",
+      reference: { status: "completed", quality: { ...qualityPayload, status: "limited", readiness_score: 70, hard_failures: [] } },
+      rider: { status: "rejected", quality: qualityPayload },
+      evidence: [],
+    }),
+  });
+  assert.equal(rejectedCallback.status, 200);
+  const rejectedSnapshot = await (await fetchApp(new URL(created.statusUrl, "http://snowtrace.test"))).json();
+  assert.equal(rejectedSnapshot.outcome.kind, "footage");
+  assert.equal(rejectedSnapshot.outcome.videos[1].readiness_score, 42);
+  assert.equal(rejectedSnapshot.outcome.videos[1].recapture_instructions.length, 1);
+
   const deleteResponse = await fetchApp(new URL(created.statusUrl, "http://snowtrace.test"), { method: "DELETE" });
   assert.equal(deleteResponse.status, 204);
   const missingResponse = await fetchApp(new URL(created.statusUrl, "http://snowtrace.test"));

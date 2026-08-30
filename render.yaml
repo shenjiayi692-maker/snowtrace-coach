@@ -1,0 +1,23 @@
+services:
+  - type: web
+    name: snowtrace-analysis
+    runtime: docker
+    region: ohio
+    plan: 1c-2g
+    dockerfilePath: ./analysis/Dockerfile
+    dockerContext: ./analysis
+    healthCheckPath: /ready
+    maxShutdownDelaySeconds: 300
+    numInstances: 1
+    autoDeployTrigger: off
+    envVars:
+      - key: SNOWTRACE_JOB_TOKEN
+        sync: false
+      - key: SNOWTRACE_SOURCE_HOSTS
+        value: snowtrace-coach.sjysjy.chatgpt.site
+      - key: SNOWTRACE_CALLBACK_HOSTS
+        value: snowtrace-coach.sjysjy.chatgpt.site
+      - key: SNOWTRACE_MAX_ACTIVE_JOBS
+        value: "1"
+      - key: SNOWTRACE_MAX_SOURCE_BYTES
+        value: "99614720"

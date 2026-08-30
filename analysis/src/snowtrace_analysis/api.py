@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import hmac
+import shutil
 import tempfile
 import threading
 import time
@@ -45,6 +46,13 @@ _active_jobs: set[str] = set()
 _active_jobs_lock = threading.Lock()
 
 
+def _positive_int_env(name: str, default: int) -> int:
+    try:
+        return max(1, int(os.environ.get(name, str(default))))
+    except ValueError:
+        return default
+
+
 @app.get("/health")
 def health() -> dict[str, str]:
     return {
@@ -52,6 +60,18 @@ def health() -> dict[str, str]:
         "pipeline_version": "video-intelligence-v0.1",
         "model": Path(_model_path()).name,
     }
+
+
+@app.get("/ready")
+def ready() -> dict[str, object]:
+    checks = {
+        "pose_model": Path(_model_path()).is_file(),
+        "ffmpeg": shutil.which("ffmpeg") is not None,
+        "ffprobe": shutil.which("ffprobe") is not None,
+    }
+    if not all(checks.values()):
+        raise HTTPException(503, detail={"status": "not_ready", "checks": checks})
+    return {"status": "ready", "checks": checks, "pipeline_version": "video-intelligence-v0.1"}
 
 
 @app.post("/v1/analyze-pair")
@@ -76,6 +96,9 @@ def queue_pair_analysis(
     with _active_jobs_lock:
         if request.analysis_id in _active_jobs:
             return {"analysis_id": request.analysis_id, "status": "accepted", "reused": True}
+        max_active_jobs = _positive_int_env("SNOWTRACE_MAX_ACTIVE_JOBS", 2)
+        if len(_active_jobs) >= max_active_jobs:
+            raise HTTPException(429, "The analysis worker is at capacity. Retry shortly.", headers={"Retry-After": "15"})
         _active_jobs.add(request.analysis_id)
     background_tasks.add_task(_process_job, request)
     return {"analysis_id": request.analysis_id, "status": "accepted", "reused": False}
@@ -193,13 +216,29 @@ def _download_source(source_url: str, destination: Path) -> Path:
     allowed_hosts = [host.strip() for host in os.environ.get("SNOWTRACE_SOURCE_HOSTS", "").split(",") if host.strip()]
     if allowed_hosts and parsed.hostname not in allowed_hosts:
         raise HTTPException(400, "Source URL host is not allowed.")
+    max_source_bytes = _positive_int_env("SNOWTRACE_MAX_SOURCE_BYTES", 100 * 1024 * 1024)
     try:
         with httpx.stream("GET", source_url, follow_redirects=True, timeout=60.0) as response:
             response.raise_for_status()
+            content_length = response.headers.get("content-length")
+            if content_length:
+                try:
+                    if int(content_length) > max_source_bytes:
+                        raise HTTPException(413, "The signed source video is too large.")
+                except ValueError:
+                    pass
+            written = 0
             with destination.open("wb") as output:
                 for chunk in response.iter_bytes():
+                    written += len(chunk)
+                    if written > max_source_bytes:
+                        raise HTTPException(413, "The signed source video is too large.")
                     output.write(chunk)
+    except HTTPException:
+        destination.unlink(missing_ok=True)
+        raise
     except httpx.HTTPError as error:
+        destination.unlink(missing_ok=True)
         raise HTTPException(400, "The signed source video could not be downloaded.") from error
     return destination
 

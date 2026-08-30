@@ -42,6 +42,8 @@ custom vision model.
   future Responses API integration
 - `docs/BETA_RUNBOOK.md`: 20-rider protocol, independent review, KPI gates, and
   go/no-go rules
+- `docs/ANALYSIS_DEPLOYMENT.md`: one-container worker deployment, secrets,
+  Sites wiring, and production smoke test
 - `db/schema.ts`: D1 application schema
 - `drizzle/`: generated D1 migration
 - `worker/`: Sites worker binding types
@@ -115,6 +117,10 @@ to the Python service. Short-lived HMAC media grants let that service download
 only the two videos attached to the run and upload 720p proxies. The callback
 stores the raw versioned output plus ranked evidence; missing runtime secrets
 leave the job honestly queued instead of fabricating a result.
+
+The UI never exposes a sample coaching report. A completed job resolves to real
+evidence, rider selection, an actionable recapture result, a no-reliable-gap
+result, or a technical retry state.
 
 The M0 web path currently uses streamed same-origin uploads capped at 95 MB per
 clip so it remains below a common Worker request ceiling. Replace this transport

@@ -12,11 +12,10 @@ RUN apt-get update \
 WORKDIR /app
 COPY pyproject.toml ./
 COPY src ./src
-RUN pip install --no-cache-dir . \
-    && mkdir -p /models \
-    && curl -L --fail --silent --show-error \
-      https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/1/pose_landmarker_lite.task \
-      -o /models/pose_landmarker_lite.task
+COPY models /models
+RUN pip install --no-cache-dir .
 
 EXPOSE 8000
-CMD ["uvicorn", "snowtrace_analysis.api:app", "--host", "0.0.0.0", "--port", "8000"]
+HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
+  CMD sh -c 'curl --fail --silent "http://127.0.0.1:${PORT:-8000}/ready" >/dev/null || exit 1'
+CMD ["sh", "-c", "exec uvicorn snowtrace_analysis.api:app --host 0.0.0.0 --port ${PORT:-8000}"]

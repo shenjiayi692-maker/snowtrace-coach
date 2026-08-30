@@ -1,8 +1,7 @@
 "use client";
 
-import { ChangeEvent, useEffect, useMemo, useRef, useState } from "react";
+import { ChangeEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  ANALYSIS_STAGES,
   buildPreflightChecks,
   preliminaryReadiness,
   qualityState,
@@ -14,9 +13,8 @@ import {
 import { MAX_VIDEO_BYTES } from "../lib/session-contract";
 import { buildCoachingView, type EvidenceSnapshot, type TurnPhase } from "../lib/coaching";
 
-type Screen = "upload" | "readiness" | "processing" | "queued" | "select-rider" | "report";
+type Screen = "upload" | "readiness" | "processing" | "queued" | "select-rider" | "outcome" | "report";
 type Goal = "medium" | "short" | "dynamic";
-type ProcessingMode = "live" | "prototype";
 
 type CreatedSession = {
   sessionId: string;
@@ -43,6 +41,37 @@ type FeedbackAnswers = {
   report_helpfulness?: "yes" | "partly" | "no";
   evidence_clarity?: "yes" | "partly" | "no";
   drill_intent?: "yes" | "maybe" | "no";
+};
+
+type QualityCheckSnapshot = {
+  id: string;
+  label: string;
+  score: number;
+  status: "good" | "medium" | "blocked";
+  detail: string;
+};
+
+type VideoQualitySnapshot = {
+  role: VideoRole;
+  status: "full" | "limited" | "rejected";
+  readiness_score: number;
+  checks: QualityCheckSnapshot[];
+  recapture_instructions: string[];
+};
+
+type AnalysisOutcome = {
+  kind: "footage" | "no_evidence" | "technical" | "service_unavailable";
+  title: string;
+  message: string;
+  retryable: boolean;
+  videos: VideoQualitySnapshot[];
+};
+
+type SessionSnapshot = {
+  run: { status: string; stage: string | null; error_code: string | null } | null;
+  evidence: EvidenceSnapshot[];
+  action: RiderSelectionAction | null;
+  outcome: AnalysisOutcome | null;
 };
 
 const SUBMISSION_STAGES = [
@@ -381,12 +410,13 @@ export function CoachApp() {
   const [stance, setStance] = useState("regular");
   const [activeStage, setActiveStage] = useState(0);
   const [activeMoment, setActiveMoment] = useState<TurnPhase>("apex");
-  const [processingMode, setProcessingMode] = useState<ProcessingMode>("prototype");
   const [submissionProgress, setSubmissionProgress] = useState(0);
   const [submissionError, setSubmissionError] = useState<string | null>(null);
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [analysisRunId, setAnalysisRunId] = useState<string | null>(null);
   const [queueMessage, setQueueMessage] = useState("Waiting for the analysis worker.");
+  const [analysisOutcome, setAnalysisOutcome] = useState<AnalysisOutcome | null>(null);
+  const [isCheckingStatus, setIsCheckingStatus] = useState(false);
   const [realEvidence, setRealEvidence] = useState<EvidenceSnapshot | null>(null);
   const [riderAction, setRiderAction] = useState<RiderSelectionAction | null>(null);
   const [selectedTracks, setSelectedTracks] = useState<Partial<Record<VideoRole, number>>>({});
@@ -394,6 +424,79 @@ export function CoachApp() {
   const [feedbackStatus, setFeedbackStatus] = useState<"idle" | "sending" | "sent" | "error">("idle");
   const referenceVideoRef = useRef<HTMLVideoElement>(null);
   const riderVideoRef = useRef<HTMLVideoElement>(null);
+
+  const applySessionSnapshot = useCallback((snapshot: SessionSnapshot) => {
+    if (!snapshot.run) {
+      setQueueMessage("The session exists, but no analysis run is attached.");
+      return;
+    }
+    if (snapshot.run.status === "needs_rider" && snapshot.action) {
+      setRiderAction(snapshot.action);
+      setSelectedTracks({});
+      setScreen("select-rider");
+      return;
+    }
+    if (snapshot.run.status === "completed" && snapshot.evidence[0]) {
+      setAnalysisOutcome(null);
+      setRealEvidence(snapshot.evidence[0]);
+      setActiveMoment(snapshot.evidence[0].phase);
+      setScreen("report");
+      return;
+    }
+    if (snapshot.outcome) {
+      setAnalysisOutcome(snapshot.outcome);
+      setScreen("outcome");
+      return;
+    }
+    if (snapshot.run.stage === "awaiting_worker" || snapshot.run.stage === "dispatch_failed") {
+      setAnalysisOutcome({
+        kind: "service_unavailable",
+        title: "The analysis worker is not available yet.",
+        message: snapshot.run.stage === "dispatch_failed"
+          ? "Your clips are stored safely, but the video-intelligence service could not accept this job."
+          : "Your clips are stored safely, but this beta deployment is not connected to the video-intelligence service.",
+        retryable: true,
+        videos: [],
+      });
+      setScreen("outcome");
+      return;
+    }
+    const stageMessages: Record<string, string> = {
+      dispatching: "Connecting the job to the MediaPipe worker…",
+      worker_dispatched: "Analyzing rider visibility, turns and comparable phases…",
+      evidence_ready: "Evidence is ready. Opening your report…",
+    };
+    setQueueMessage(stageMessages[snapshot.run.stage ?? ""] ?? `Analysis status: ${snapshot.run.status}.`);
+  }, []);
+
+  const refreshQueue = useCallback(async (announce = true) => {
+    if (!sessionId) return;
+    if (announce) setIsCheckingStatus(true);
+    try {
+      const response = await fetch(`/api/sessions/${sessionId}`, { cache: "no-store" });
+      const snapshot = await readApiResponse<SessionSnapshot>(response);
+      applySessionSnapshot(snapshot);
+    } catch (cause) {
+      setQueueMessage(cause instanceof Error ? cause.message : "Status could not be refreshed.");
+    } finally {
+      if (announce) setIsCheckingStatus(false);
+    }
+  }, [applySessionSnapshot, sessionId]);
+
+  useEffect(() => {
+    if (screen !== "queued" || !sessionId) return;
+    let active = true;
+    const poll = async () => {
+      if (!active || document.visibilityState === "hidden") return;
+      await refreshQueue(false);
+    };
+    void poll();
+    const timer = window.setInterval(() => void poll(), 4_000);
+    return () => {
+      active = false;
+      window.clearInterval(timer);
+    };
+  }, [refreshQueue, screen, sessionId]);
 
   useEffect(() => {
     return () => {
@@ -410,17 +513,8 @@ export function CoachApp() {
   );
   const canContinue = Boolean(reference && rider && !busyRole);
   const coaching = useMemo(() => realEvidence ? buildCoachingView(realEvidence) : null, [realEvidence]);
-  const sampleTimestamps: Record<Exclude<TurnPhase, "shaping">, { reference: number; rider: number }> = {
-    initiation: { reference: 7700, rider: 6100 },
-    apex: { reference: 8400, rider: 6900 },
-    completion: { reference: 9100, rider: 7600 },
-  };
-  const activeReferenceTimestamp = realEvidence
-    ? realEvidence.reference_timestamp_ms
-    : activeMoment === "shaping" ? 8000 : sampleTimestamps[activeMoment].reference;
-  const activeRiderTimestamp = realEvidence
-    ? realEvidence.user_timestamp_ms
-    : activeMoment === "shaping" ? 6500 : sampleTimestamps[activeMoment].rider;
+  const activeReferenceTimestamp = realEvidence?.reference_timestamp_ms ?? 0;
+  const activeRiderTimestamp = realEvidence?.user_timestamp_ms ?? 0;
 
   function seekEvidence() {
     if (!realEvidence) return;
@@ -453,29 +547,12 @@ export function CoachApp() {
     }
   }
 
-  function startPrototypeAnalysis() {
-    setProcessingMode("prototype");
-    setSubmissionError(null);
-    setScreen("processing");
-    setActiveStage(0);
-    let nextStage = 0;
-    const timer = window.setInterval(() => {
-      nextStage += 1;
-      if (nextStage >= ANALYSIS_STAGES.length) {
-        window.clearInterval(timer);
-        setScreen("report");
-        return;
-      }
-      setActiveStage(nextStage);
-    }, 680);
-  }
-
   async function startLiveAnalysis() {
     if (!reference || !rider || !referenceFile || !riderFile) return;
-    setProcessingMode("live");
     setSubmissionError(null);
     setSubmissionProgress(0);
     setRealEvidence(null);
+    setAnalysisOutcome(null);
     setRiderAction(null);
     setSelectedTracks({});
     setFeedbackAnswers({});
@@ -531,42 +608,29 @@ export function CoachApp() {
       setActiveStage(3);
 
       const analysisResponse = await fetch(created.analysisUrl, { method: "POST" });
-      const queued = await readApiResponse<{ analysisRunId: string; status: string }>(analysisResponse);
+      const queued = await readApiResponse<{ analysisRunId: string; status: string; stage: string }>(analysisResponse);
       setAnalysisRunId(queued.analysisRunId);
-      setQueueMessage("Both clips are stored and the pose gate is queued.");
-      setScreen("queued");
+      if (queued.stage === "awaiting_worker" || queued.stage === "dispatch_failed") {
+        setAnalysisOutcome({
+          kind: "service_unavailable",
+          title: "The analysis worker is not available yet.",
+          message: queued.stage === "dispatch_failed"
+            ? "Your clips are stored safely, but the video-intelligence service could not accept this job."
+            : "Your clips are stored safely, but this beta deployment is not connected to the video-intelligence service.",
+          retryable: true,
+          videos: [],
+        });
+        setScreen("outcome");
+      } else {
+        setQueueMessage("Both clips are stored. Analysis has started; this page updates automatically.");
+        setScreen("queued");
+      }
     } catch (cause) {
       if (createdSessionId) {
         await fetch(`/api/sessions/${createdSessionId}`, { method: "DELETE" }).catch(() => undefined);
         setSessionId(null);
       }
       setSubmissionError(cause instanceof Error ? cause.message : "The analysis session could not be submitted.");
-    }
-  }
-
-  async function refreshQueue() {
-    if (!sessionId) return;
-    try {
-      const response = await fetch(`/api/sessions/${sessionId}`, { cache: "no-store" });
-      const snapshot = await readApiResponse<{
-        run: { status: string; stage: string | null } | null;
-        evidence: EvidenceSnapshot[];
-        action: RiderSelectionAction | null;
-      }>(response);
-      if (!snapshot.run) setQueueMessage("The session exists, but no analysis run is attached.");
-      else if (snapshot.run.status === "queued") setQueueMessage("Still queued. The hosted MediaPipe worker is not connected yet.");
-      else if (snapshot.run.status === "needs_rider" && snapshot.action) {
-        setRiderAction(snapshot.action);
-        setSelectedTracks({});
-        setScreen("select-rider");
-      }
-      else if (snapshot.run.status === "completed" && snapshot.evidence[0]) {
-        setRealEvidence(snapshot.evidence[0]);
-        setActiveMoment(snapshot.evidence[0].phase);
-        setScreen("report");
-      } else setQueueMessage(`Analysis status: ${snapshot.run.status} · ${snapshot.run.stage ?? "updating"}`);
-    } catch (cause) {
-      setQueueMessage(cause instanceof Error ? cause.message : "Status could not be refreshed.");
     }
   }
 
@@ -591,6 +655,33 @@ export function CoachApp() {
     }
   }
 
+  async function retryAnalysisDispatch() {
+    if (!sessionId) return;
+    setQueueMessage("Reconnecting to the analysis worker…");
+    try {
+      const response = await fetch(`/api/sessions/${sessionId}/analysis`, { method: "POST" });
+      const queued = await readApiResponse<{ analysisRunId: string; status: string; stage: string }>(response);
+      setAnalysisRunId(queued.analysisRunId);
+      if (queued.stage === "worker_dispatched") {
+        setAnalysisOutcome(null);
+        setQueueMessage("Analysis has started. This page updates automatically.");
+        setScreen("queued");
+      } else {
+        setAnalysisOutcome((current) => current ? {
+          ...current,
+          message: queued.stage === "dispatch_failed"
+            ? "The analysis worker still could not accept this job. Your clips remain stored safely."
+            : "The analysis worker is still offline. Your clips remain stored safely.",
+        } : current);
+      }
+    } catch (cause) {
+      setAnalysisOutcome((current) => current ? {
+        ...current,
+        message: cause instanceof Error ? cause.message : "The analysis job could not be retried.",
+      } : current);
+    }
+  }
+
   async function deleteQueuedSession() {
     if (!sessionId) return;
     setQueueMessage("Deleting both source clips…");
@@ -600,6 +691,7 @@ export function CoachApp() {
       setSessionId(null);
       setAnalysisRunId(null);
       setRealEvidence(null);
+      setAnalysisOutcome(null);
       setRiderAction(null);
       setSelectedTracks({});
       setQueueMessage("Session deleted.");
@@ -633,6 +725,8 @@ export function CoachApp() {
     setScreen("upload");
     setActiveStage(0);
     setSubmissionError(null);
+    setAnalysisOutcome(null);
+    setRealEvidence(null);
     setFeedbackAnswers({});
     setFeedbackStatus("idle");
   }
@@ -809,9 +903,6 @@ export function CoachApp() {
             <button type="button" className="primary-button centered-button" onClick={startLiveAnalysis}>
               Upload &amp; queue pose gate <span aria-hidden="true">→</span>
             </button>
-            <button type="button" className="secondary-button" onClick={startPrototypeAnalysis}>
-              Preview report contract without uploading
-            </button>
           </div>
         </div>
       )}
@@ -820,21 +911,17 @@ export function CoachApp() {
         <div className="processing-screen">
           <div className="processing-orbit" aria-hidden="true"><span /></div>
           <span className="eyebrow">STEP 03 / 04</span>
-          <h1>{processingMode === "live" ? "Securing your analysis session." : "Turning video into evidence."}</h1>
-          <p>
-            {processingMode === "live"
-              ? "Upload progress is real. Coaching does not begin until the MediaPipe quality gate accepts both clips."
-              : "Prototype preview only. Each stage below maps to the intended pipeline checkpoint."}
-          </p>
+          <h1>Securing your analysis session.</h1>
+          <p>Upload progress is real. Coaching does not begin until the MediaPipe quality gate accepts both clips.</p>
           <div className="stage-list">
-            {(processingMode === "live" ? SUBMISSION_STAGES : ANALYSIS_STAGES).map((stage, index) => {
+            {SUBMISSION_STAGES.map((stage, index) => {
               const state = index < activeStage ? "done" : index === activeStage ? "active" : "waiting";
               return (
                 <div className={`stage-row ${state}`} key={stage.id}>
                   <span className="stage-marker">{state === "done" ? "✓" : state === "active" ? "→" : "·"}</span>
                   <div>
                     <strong>{stage.label}</strong>
-                    <span>{stage.detail}{processingMode === "live" && index === activeStage && (index === 1 || index === 2) ? ` · ${submissionProgress}%` : ""}</span>
+                    <span>{stage.detail}{index === activeStage && (index === 1 || index === 2) ? ` · ${submissionProgress}%` : ""}</span>
                   </div>
                 </div>
               );
@@ -846,7 +933,6 @@ export function CoachApp() {
               <p>{submissionError}</p>
               <div>
                 <button type="button" className="secondary-button" onClick={() => setScreen("readiness")}>Back to footage check</button>
-                <button type="button" className="text-button" onClick={startPrototypeAnalysis}>Preview report contract</button>
               </div>
             </div>
           )}
@@ -859,7 +945,7 @@ export function CoachApp() {
           <span className="eyebrow">STEP 04 / 04 · REAL JOB CREATED</span>
           <h1>Your clips are stored.<br /><em>The pose gate is queued.</em></h1>
           <p className="queue-lede">
-            No coaching report has been generated. The hosted MediaPipe worker must inspect rider visibility, find comparable turns and pass metric confidence thresholds first.
+            No coaching report is generated until the MediaPipe worker inspects rider visibility, finds comparable turns and passes metric confidence thresholds. This page checks progress automatically.
           </p>
           <div className="queue-status-grid">
             <article><span>01</span><strong>Private upload</strong><p>Reference and rider files verified in video storage.</p></article>
@@ -871,10 +957,63 @@ export function CoachApp() {
             <span>Run <code>{analysisRunId?.slice(0, 18)}…</code></span>
           </div>
           <div className="queue-actions">
-            <button type="button" className="primary-button" onClick={refreshQueue}>Check real status</button>
-            <button type="button" className="secondary-button" onClick={() => setScreen("report")}>Preview report layout</button>
+            <button type="button" className="primary-button" disabled={isCheckingStatus} onClick={() => refreshQueue()}>
+              {isCheckingStatus ? "Checking…" : "Check now"}
+            </button>
             <button type="button" className="danger-text-button" onClick={deleteQueuedSession}>Delete session &amp; both clips</button>
           </div>
+        </div>
+      )}
+
+      {screen === "outcome" && analysisOutcome && (
+        <div className="focused-screen outcome-screen">
+          <div className={`outcome-mark ${analysisOutcome.kind}`} aria-hidden="true">
+            {analysisOutcome.kind === "no_evidence" ? "≈" : analysisOutcome.kind === "footage" ? "!" : "↻"}
+          </div>
+          <span className="eyebrow">VIDEO INTELLIGENCE RESULT · NO COACHING GENERATED</span>
+          <h1>{analysisOutcome.title}</h1>
+          <p className="outcome-lede">{analysisOutcome.message}</p>
+
+          {analysisOutcome.videos.length > 0 && (
+            <div className="quality-result-grid">
+              {analysisOutcome.videos.map((video) => (
+                <section className="quality-result-card" key={video.role}>
+                  <div className="quality-result-heading">
+                    <div>
+                      <span className="eyebrow">{video.role === "reference" ? "REFERENCE VIDEO" : "YOUR RIDE"}</span>
+                      <h2>{video.readiness_score}/100 readiness</h2>
+                    </div>
+                    <span className={`quality-badge ${video.status}`}>{video.status}</span>
+                  </div>
+                  <div className="quality-check-list">
+                    {video.checks.map((check) => (
+                      <div className="quality-check-item" key={check.id}>
+                        <StatusDot state={check.status} />
+                        <div><strong>{check.label}</strong><span>{check.detail}</span></div>
+                        <b>{Math.round(check.score)}</b>
+                      </div>
+                    ))}
+                  </div>
+                  {video.recapture_instructions.length > 0 && (
+                    <div className="recapture-list">
+                      <span>RECATCH THIS CLIP</span>
+                      <ul>{video.recapture_instructions.map((instruction) => <li key={instruction}>{instruction}</li>)}</ul>
+                    </div>
+                  )}
+                </section>
+              ))}
+            </div>
+          )}
+
+          <div className="outcome-actions">
+            {analysisOutcome.retryable && (
+              <button type="button" className="primary-button" onClick={retryAnalysisDispatch}>Retry analysis</button>
+            )}
+            <button type="button" className={analysisOutcome.retryable ? "secondary-button" : "primary-button"} onClick={deleteQueuedSession}>
+              Delete clips &amp; choose new videos
+            </button>
+          </div>
+          <p className="outcome-guardrail">Snowtrace did not turn uncertain footage into a confident coaching claim.</p>
         </div>
       )}
 
@@ -924,11 +1063,11 @@ export function CoachApp() {
         </div>
       )}
 
-      {screen === "report" && reference && rider && (
+      {screen === "report" && reference && rider && realEvidence && coaching && (
         <div className="report-screen">
           <div className="report-header">
             <div>
-              <span className="eyebrow">STEP 04 / 04 · {realEvidence ? "QUALITY-GATED EVIDENCE" : "PROTOTYPE EVIDENCE"}</span>
+              <span className="eyebrow">STEP 04 / 04 · QUALITY-GATED EVIDENCE</span>
               <h1>Your biggest visible gap</h1>
             </div>
             <button type="button" className="secondary-button" onClick={reset}>New analysis</button>
@@ -937,22 +1076,22 @@ export function CoachApp() {
           <section className="finding-card">
             <div className="finding-index">01</div>
             <div className="finding-copy">
-              <span className={`confidence-label ${realEvidence && realEvidence.confidence >= 0.8 ? "high" : "medium"}`}>
-                {realEvidence ? `${Math.round(realEvidence.confidence * 100)}% CONFIDENCE · ${coaching?.metricLabel.toUpperCase()}` : "SAMPLE REPORT STRUCTURE"}
+              <span className={`confidence-label ${realEvidence.confidence >= 0.8 ? "high" : "medium"}`}>
+                {Math.round(realEvidence.confidence * 100)}% CONFIDENCE · {coaching.metricLabel.toUpperCase()}
               </span>
-              <h2>{coaching?.title ?? "Your flexion peak arrives later than the reference at the apex."}</h2>
-              <p>{coaching?.explanation ?? "This screen demonstrates the evidence and coaching contract. It is not a real diagnosis or analysis result."}</p>
+              <h2>{coaching.title}</h2>
+              <p>{coaching.explanation}</p>
               <div className="evidence-stat">
                 <div>
                   <span>Reference</span>
-                  <strong>{realEvidence ? formatEvidenceValue(realEvidence.details.reference_value, realEvidence.details.unit) : "44%"}</strong>
-                  <small>{realEvidence ? realEvidence.phase : "of turn cycle"}</small>
+                  <strong>{formatEvidenceValue(realEvidence.details.reference_value, realEvidence.details.unit)}</strong>
+                  <small>{realEvidence.phase}</small>
                 </div>
-                <div className="difference-arrow">→ <b>{realEvidence ? `${realEvidence.details.difference > 0 ? "+" : ""}${formatEvidenceValue(realEvidence.details.difference, realEvidence.details.unit)}` : "+13%"}</b></div>
+                <div className="difference-arrow">→ <b>{realEvidence.details.difference > 0 ? "+" : ""}{formatEvidenceValue(realEvidence.details.difference, realEvidence.details.unit)}</b></div>
                 <div>
                   <span>Your ride</span>
-                  <strong>{realEvidence ? formatEvidenceValue(realEvidence.details.user_value, realEvidence.details.unit) : "57%"}</strong>
-                  <small>{realEvidence ? `${realEvidence.details.paired_turns} paired turns` : "of turn cycle"}</small>
+                  <strong>{formatEvidenceValue(realEvidence.details.user_value, realEvidence.details.unit)}</strong>
+                  <small>{realEvidence.details.paired_turns} paired turns</small>
                 </div>
               </div>
             </div>
@@ -962,10 +1101,10 @@ export function CoachApp() {
             <div className="compare-toolbar">
               <div>
                 <span className="eyebrow">SHOW ME WHERE</span>
-                <h2>{realEvidence ? "One paired turn. Exact evidence phase." : "Same turn. Same phase."}</h2>
+                <h2>One paired turn. Exact evidence phase.</h2>
               </div>
               <div className="moment-tabs" role="tablist" aria-label="Turn phase">
-                {(realEvidence ? [realEvidence.phase] : ["initiation", "apex", "completion"] as TurnPhase[]).map((moment) => (
+                {[realEvidence.phase].map((moment) => (
                   <button type="button" role="tab" aria-selected={activeMoment === moment} className={activeMoment === moment ? "active" : ""} onClick={() => { setActiveMoment(moment); window.setTimeout(seekEvidence, 0); }} key={moment}>
                     {moment}
                   </button>
@@ -989,20 +1128,16 @@ export function CoachApp() {
           <section className="coaching-grid">
             <article className="explanation-card">
               <span className="eyebrow">WHAT IT MAY MEAN</span>
-              <h3>{coaching?.explanation ?? "You may be holding your taller stance too far into the shaping phase."}</h3>
-              <p>{realEvidence ? "A deterministic coaching template turns one accepted metric into cautious language. It does not infer force, pressure or exact edge angle." : "Sample copy only; this is not a force or pressure diagnosis."}</p>
+              <h3>{coaching.explanation}</h3>
+              <p>A deterministic coaching template turns one accepted metric into cautious language. It does not infer force, pressure or exact edge angle.</p>
             </article>
             <article className="drill-card">
               <span className="eyebrow">ONE DRILL FOR YOUR NEXT RUN</span>
-              <h3>{coaching?.drill.title ?? "Progressive flexion turns"}</h3>
+              <h3>{coaching.drill.title}</h3>
               <ol>
-                {(coaching?.drill.steps ?? [
-                  "Use a comfortable blue groomer.",
-                  "Begin flexing as the new edge engages.",
-                  "Aim to feel lowest just before the apex.",
-                ]).map((step) => <li key={step}>{step}</li>)}
+                {coaching.drill.steps.map((step) => <li key={step}>{step}</li>)}
               </ol>
-              <div className="success-cue"><span>SUCCESS CUE</span>{coaching?.drill.successCue ?? "Your lowest position happens earlier without rushing the edge change."}</div>
+              <div className="success-cue"><span>SUCCESS CUE</span>{coaching.drill.successCue}</div>
             </article>
           </section>
 

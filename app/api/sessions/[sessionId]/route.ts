@@ -18,6 +18,95 @@ type VideoRow = { id: string; role: string; object_key: string; original_name: s
 type EvidenceRow = { metric_id: string; rank: number; confidence: number; effect_size: number; phase: string; user_timestamp_ms: number; reference_timestamp_ms: number; evidence_json: string };
 type OutputRow = { status: string; result_json: string };
 
+type QualityCheckSnapshot = {
+  id: string;
+  label: string;
+  score: number;
+  status: "good" | "medium" | "blocked";
+  detail: string;
+};
+
+type VideoQualitySnapshot = {
+  role: "reference" | "rider";
+  status: "full" | "limited" | "rejected";
+  readiness_score: number;
+  checks: QualityCheckSnapshot[];
+  recapture_instructions: string[];
+};
+
+function qualitySnapshot(role: "reference" | "rider", value: unknown): VideoQualitySnapshot | null {
+  if (!value || typeof value !== "object") return null;
+  const video = value as Record<string, unknown>;
+  const quality = video.quality;
+  if (!quality || typeof quality !== "object") return null;
+  const item = quality as Record<string, unknown>;
+  if (!["full", "limited", "rejected"].includes(String(item.status)) || typeof item.readiness_score !== "number") return null;
+  const checks = Array.isArray(item.checks) ? item.checks.flatMap((check) => {
+    if (!check || typeof check !== "object") return [];
+    const entry = check as Record<string, unknown>;
+    if (typeof entry.id !== "string" || typeof entry.label !== "string" || typeof entry.score !== "number"
+      || !["good", "medium", "blocked"].includes(String(entry.status)) || typeof entry.detail !== "string") return [];
+    return [{
+      id: entry.id,
+      label: entry.label,
+      score: Math.max(0, Math.min(100, entry.score)),
+      status: entry.status as QualityCheckSnapshot["status"],
+      detail: entry.detail,
+    }];
+  }) : [];
+  const recaptureInstructions = Array.isArray(item.recapture_instructions)
+    ? item.recapture_instructions.filter((instruction): instruction is string => typeof instruction === "string").slice(0, 5)
+    : [];
+  return {
+    role,
+    status: item.status as VideoQualitySnapshot["status"],
+    readiness_score: Math.max(0, Math.min(100, Math.round(item.readiness_score))),
+    checks,
+    recapture_instructions: recaptureInstructions,
+  };
+}
+
+function analysisOutcome(output: OutputRow | null, evidenceCount: number) {
+  if (!output) return null;
+  let result: Record<string, unknown>;
+  try {
+    result = JSON.parse(output.result_json) as Record<string, unknown>;
+  } catch {
+    return output.status === "failed" ? {
+      kind: "technical",
+      title: "The analysis did not finish.",
+      message: "Your clips were not used to generate coaching. Retry the job or delete the session and start again.",
+      retryable: true,
+      videos: [],
+    } : null;
+  }
+  const videos = (["reference", "rider"] as const)
+    .map((role) => qualitySnapshot(role, result[role]))
+    .filter((video): video is VideoQualitySnapshot => video !== null);
+  if (output.status === "rejected") return {
+    kind: "footage",
+    title: "One or both clips need a recapture.",
+    message: "The pose quality gate could not support a reliable comparison, so Snowtrace did not generate coaching.",
+    retryable: false,
+    videos,
+  };
+  if (output.status === "failed") return {
+    kind: "technical",
+    title: "The analysis did not finish.",
+    message: "Your clips were not used to generate coaching. Retry the job or delete the session and start again.",
+    retryable: true,
+    videos,
+  };
+  if (output.status === "completed" && evidenceCount === 0) return {
+    kind: "no_evidence",
+    title: "No reliable gap cleared the evidence threshold.",
+    message: "Both clips were analyzed, but no repeatable difference was strong enough to justify a drill. That is a valid result, not a failed analysis.",
+    retryable: false,
+    videos,
+  };
+  return null;
+}
+
 function riderSelectionAction(output: OutputRow | null) {
   if (!output || output.status !== "needs_rider") return null;
   try {
@@ -67,16 +156,18 @@ export async function GET(_request: Request, context: { params: Promise<{ sessio
   const output = run ? await env.DB.prepare(
     "SELECT status, result_json FROM analysis_outputs WHERE analysis_run_id = ? LIMIT 1",
   ).bind(run.id).first<OutputRow>() : null;
+  const evidence = (evidenceResult.results ?? []).map(({ evidence_json, ...item }) => ({
+    ...item,
+    details: JSON.parse(evidence_json),
+  }));
 
   return Response.json({
     session,
     run,
     videos,
-    evidence: (evidenceResult.results ?? []).map(({ evidence_json, ...item }) => ({
-      ...item,
-      details: JSON.parse(evidence_json),
-    })),
+    evidence,
     action: riderSelectionAction(output),
+    outcome: analysisOutcome(output, evidence.length),
   }, { headers: { "cache-control": "no-store" } });
 }
 

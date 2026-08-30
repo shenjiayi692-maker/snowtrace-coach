@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from .contracts import CameraMode, EdgeType, VideoAnalysisResult, VideoRole
+from .contracts import CameraMode, EdgeType, QualityGateResult, VideoAnalysisResult, VideoRole
 from .metrics import compute_metric_series
 from .phases import detect_turns
 from .pose import extract_tracks, rider_candidates, selection_is_ambiguous
@@ -33,12 +33,28 @@ class AnalysisPipeline:
         tracks, analyzed_frames, _ = extract_tracks(proxy_path, self.model_path, num_poses=4)
         candidates = rider_candidates(tracks, analyzed_frames)
         if not tracks:
-            return VideoAnalysisResult(role, camera_mode, metadata, proxy_path, None, [], None, None, [], None, [], "rejected")
+            quality = QualityGateResult(
+                status="rejected",
+                readiness_score=0,
+                hard_failures=["rider_not_found"],
+                checks=[],
+                allowed_metrics=[],
+                recapture_instructions=[
+                    "Keep one rider large enough to see and continuously inside the frame.",
+                    "Use a stable fixed camera and avoid strong backlight or heavy motion blur.",
+                ],
+            )
+            return VideoAnalysisResult(role, camera_mode, metadata, proxy_path, None, [], None, None, [], quality, [], "rejected")
 
         if selected_track_id is None and selection_is_ambiguous(tracks):
             return VideoAnalysisResult(role, camera_mode, metadata, proxy_path, None, candidates, None, None, [], None, [], "needs_rider")
 
-        selected = next((track for track in tracks if track.track_id == selected_track_id), tracks[0])
+        if selected_track_id is None:
+            selected = tracks[0]
+        else:
+            selected = next((track for track in tracks if track.track_id == selected_track_id), None)
+            if selected is None:
+                raise ValueError("The selected rider track is no longer available.")
         turns = detect_turns(selected, first_edge)
         blur_score, exposure_score = sample_visual_quality(proxy_path)
         stability_score = estimate_camera_stability(proxy_path)
