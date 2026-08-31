@@ -12,6 +12,7 @@ export type VideoInspection = {
   durationScore: number;
   exposureScore: number | null;
   sharpnessScore: number | null;
+  fingerprint: string;
   previewUrl: string;
 };
 

@@ -36,6 +36,9 @@ analysis service.
 - Durable upload timestamps and idempotent evidence-view events so beta funnel
   metrics remain correct after video expiry and do not count no-evidence runs
   as completed reports
+- Anonymous, D1-backed visible-gap history that compares sessions only when the
+  reference fingerprint, goal, camera context, metric, phase, and unit match;
+  it is explicitly not presented as a riding score
 
 The MVP is snowboard carving only. It does not claim force, pressure, exact
 board edge angle, or physically accurate 3D measurements. It does not train a

@@ -14,6 +14,7 @@ export type SessionVideoInput = {
   durationSeconds: number;
   width: number;
   height: number;
+  fingerprint: string;
   preflight: {
     resolutionScore: number;
     durationScore: number;
@@ -59,6 +60,7 @@ function parseVideo(value: unknown): SessionVideoInput | null {
   if (!finiteNumber(video.sizeBytes, 1, MAX_VIDEO_BYTES)) return null;
   if (!finiteNumber(video.durationSeconds, 0.1, 300)) return null;
   if (!finiteNumber(video.width, 1, 16384) || !finiteNumber(video.height, 1, 16384)) return null;
+  if (typeof video.fingerprint !== "string" || !/^[a-f0-9]{64}$/.test(video.fingerprint)) return null;
   if (!preflight) return null;
 
   for (const key of ["resolutionScore", "durationScore"] as const) {
@@ -76,6 +78,7 @@ function parseVideo(value: unknown): SessionVideoInput | null {
     durationSeconds: video.durationSeconds,
     width: video.width,
     height: video.height,
+    fingerprint: video.fingerprint,
     preflight: {
       resolutionScore: preflight.resolutionScore as number,
       durationScore: preflight.durationScore as number,

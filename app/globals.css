@@ -262,6 +262,87 @@ input:focus-visible {
   background: rgba(255, 255, 255, 0.28);
 }
 
+.progress-history {
+  grid-column: 1 / -1;
+  padding: 34px clamp(24px, 5vw, 76px) 42px;
+  border-top: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.2);
+}
+
+.progress-history-heading {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: 28px;
+}
+
+.progress-history-heading h2 {
+  margin: 7px 0 0;
+  font-size: 1.65rem;
+}
+
+.progress-history-heading p {
+  width: min(440px, 100%);
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.76rem;
+  line-height: 1.55;
+}
+
+.progress-history-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  margin-top: 22px;
+}
+
+.progress-history-grid article {
+  padding: 18px;
+  border: 1px solid var(--line);
+  background: var(--snow);
+}
+
+.progress-history-grid article > div {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  color: var(--muted);
+  font-size: 0.62rem;
+  font-weight: 720;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.progress-history-grid h3 {
+  margin: 20px 0 8px;
+  font-size: 1rem;
+}
+
+.progress-history-grid strong {
+  display: block;
+  font-size: 1.35rem;
+}
+
+.progress-history-grid p,
+.progress-empty {
+  margin: 9px 0 0;
+  color: var(--muted);
+  font-size: 0.72rem;
+  line-height: 1.5;
+}
+
+.progress-empty {
+  padding: 20px;
+  border: 1px dashed var(--line);
+}
+
+.progress-history > small {
+  display: block;
+  margin-top: 15px;
+  color: var(--muted);
+  font-size: 0.62rem;
+}
+
 .service-notice {
   margin-bottom: 26px;
   padding: 20px;
@@ -1724,8 +1805,17 @@ input:focus-visible {
   }
 
   .hero-copy,
-  .upload-workspace {
+  .upload-workspace,
+  .progress-history {
     padding: 38px 18px;
+  }
+
+  .progress-history-heading {
+    display: block;
+  }
+
+  .progress-history-heading p {
+    margin-top: 10px;
   }
 
   .hero-copy h1 {
@@ -1744,6 +1834,7 @@ input:focus-visible {
 
   .goal-options,
   .upload-pair,
+  .progress-history-grid,
   .metric-confidence,
   .video-grid,
   .coaching-grid,

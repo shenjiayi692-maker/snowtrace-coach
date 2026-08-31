@@ -43,8 +43,9 @@ group.
    after scrubbing away from that moment.
 5. Rider reads one drill and submits the three in-product feedback answers.
 6. Within 3–7 days, invite the rider to film the same goal again after trying
-   the drill. Record whether they upload a second clip; do not count verbal
-   intent as retention.
+   the drill. Ask them to reuse the same reference clip and camera context when
+   they want a visible-gap comparison. Record whether they upload a second
+   complete pair; do not count verbal intent as retention.
 7. Conduct a 15-minute interview after the product task.
 
 Interview prompts:
@@ -99,6 +100,13 @@ issue log or a URL. Its key fields map to the gates as follows:
 
 Do not substitute `analysis_runs.status = completed` for report completion: a
 completed run can legitimately contain no reliable evidence and no report.
+
+The upload page shows at most three recent evidence-backed gaps for the
+anonymous device identity. It computes a directional gap change only when the
+reference file fingerprint, goal, camera mode, view, metric, phase, and unit all
+match a prior record. Label this as movement relative to one reference, never
+as skill, certification level, or proof that technique improved. A different
+reference or filming context starts a new baseline.
 
 Before any beta upload, the interface requires the rider to confirm that they
 are at least 18, have permission to use both clips (including visible people),

@@ -48,6 +48,8 @@ test("server-renders the Snowtrace vertical slice", async () => {
   assert.match(html, /Private source storage/);
   assert.match(html, /I am 18 or older and I have permission to use these clips/);
   assert.match(html, /scheduled for deletion after 30 days/);
+  assert.match(html, /Visible gap history/);
+  assert.match(html, /Not a riding score/);
   assert.doesNotMatch(html, /codex-preview|react-loading-skeleton|Your site is taking shape/i);
 });
 
@@ -75,6 +77,16 @@ test("rejects an invalid analysis session before touching storage", async () => 
   assert.deepEqual(await response.json(), { error: "A valid anonymous rider ID is required." });
 });
 
+test("keeps progress history behind a valid anonymous device identifier", async () => {
+  const response = await fetchBuiltApp(new Request("http://localhost/api/progress", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ anonymousId: "short" }),
+  }));
+  assert.equal(response.status, 400);
+  assert.deepEqual(await response.json(), { error: "A valid anonymous rider ID is required." });
+});
+
 test("does not create a valid session while the analysis worker is offline", async () => {
   const videos = ["reference", "rider"].map((role) => ({
     role,
@@ -84,6 +96,7 @@ test("does not create a valid session while the analysis worker is offline", asy
     durationSeconds: 8,
     width: 1280,
     height: 720,
+    fingerprint: (role === "reference" ? "a" : "b").repeat(64),
     preflight: { resolutionScore: 88, durationScore: 100, exposureScore: 80, sharpnessScore: 75 },
   }));
   const response = await fetchBuiltApp(new Request("http://localhost/api/sessions", {

@@ -160,14 +160,20 @@ export async function GET(_request: Request, context: { params: Promise<{ sessio
   ).bind(sessionId).all<VideoRow>();
   const videos = await Promise.all((videoResult.results ?? []).map(async ({ object_key, metadata_json, ...video }) => {
     let preflight: unknown = null;
+    let fingerprint: string | null = null;
     try {
-      preflight = metadata_json ? (JSON.parse(metadata_json) as { browserPreflight?: unknown }).browserPreflight ?? null : null;
+      const metadata = metadata_json ? JSON.parse(metadata_json) as { browserPreflight?: unknown; fingerprint?: unknown } : null;
+      preflight = metadata?.browserPreflight ?? null;
+      fingerprint = typeof metadata?.fingerprint === "string" && /^[a-f0-9]{64}$/.test(metadata.fingerprint)
+        ? metadata.fingerprint
+        : null;
     } catch {
       preflight = null;
     }
     return {
       ...video,
       preflight,
+      fingerprint,
       playback_url: `/api/videos/${encodeURIComponent(video.id)}/content?session=${encodeURIComponent(sessionId)}`,
       uploaded: Boolean(await env.VIDEOS.head(object_key)),
     };

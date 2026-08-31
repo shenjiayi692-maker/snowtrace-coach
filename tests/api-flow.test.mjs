@@ -168,6 +168,7 @@ test("creates, uploads, queues, reads and deletes a real analysis session", asyn
           durationSeconds: 8,
           width: 1920,
           height: 1080,
+          fingerprint: "a".repeat(64),
           preflight: { resolutionScore: 100, durationScore: 100, exposureScore: 82, sharpnessScore: 76 },
         },
         {
@@ -178,6 +179,7 @@ test("creates, uploads, queues, reads and deletes a real analysis session", asyn
           durationSeconds: 9,
           width: 1280,
           height: 720,
+          fingerprint: "b".repeat(64),
           preflight: { resolutionScore: 88, durationScore: 100, exposureScore: 79, sharpnessScore: 71 },
         },
       ],
@@ -327,6 +329,21 @@ test("creates, uploads, queues, reads and deletes a real analysis session", asyn
   assert.deepEqual(status.videos.map((video) => video.uploaded).sort(), [true, true]);
   assert.ok(status.videos.every((video) => video.playback_url.includes(created.sessionId)));
 
+  const progressResponse = await fetchApp("http://snowtrace.test/api/progress", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ anonymousId: "rider_1234567890abcdef" }),
+  });
+  assert.equal(progressResponse.status, 200);
+  const progress = await progressResponse.json();
+  assert.equal(progress.history.length, 1);
+  assert.equal(progress.history[0].goal, "medium");
+  assert.equal(progress.history[0].metricId, "knee_flexion_lead");
+  assert.equal(progress.history[0].gapChange, null);
+  assert.equal("referenceFingerprint" in progress.history[0], false);
+  assert.equal("sessionId" in progress.history[0], false);
+  assert.equal("originalName" in progress.history[0], false);
+
   const reportViewedEvent = {
     sessionId: created.sessionId,
     analysisRunId: queued.analysisRunId,
@@ -430,6 +447,12 @@ test("creates, uploads, queues, reads and deletes a real analysis session", asyn
   const noEvidenceSnapshot = await (await fetchApp(new URL(created.statusUrl, "http://snowtrace.test"))).json();
   assert.equal(noEvidenceSnapshot.outcome.kind, "no_evidence");
   assert.equal(noEvidenceSnapshot.outcome.retryable, false);
+  const emptyProgress = await fetchApp("http://snowtrace.test/api/progress", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ anonymousId: "rider_1234567890abcdef" }),
+  });
+  assert.deepEqual(await emptyProgress.json(), { history: [] });
   const noEvidenceEvent = await fetchApp("http://snowtrace.test/api/events", {
     method: "POST",
     headers: { "content-type": "application/json" },
@@ -508,6 +531,69 @@ test("counts a second completed upload within seven days without relying on reta
   assert.equal(globalThis.__snowtraceCloudflareEnv.VIDEOS.objects.size, 0);
 
   database.prepare("DELETE FROM profiles WHERE id = ?").run("pro_repeat");
+});
+
+test("computes a visible-gap trend only for matching reference and capture context", async () => {
+  const records = [
+    { index: 0, date: "2026-01-01T12:00:00.000Z", fingerprint: "c".repeat(64), difference: 20 },
+    { index: 1, date: "2026-01-02T12:00:00.000Z", fingerprint: "d".repeat(64), difference: 5 },
+    { index: 2, date: "2026-01-03T12:00:00.000Z", fingerprint: "c".repeat(64), difference: 12 },
+  ];
+  database.prepare(
+    "INSERT INTO profiles (id, anonymous_id, locale, stance, level, consent_version, created_at, updated_at) VALUES (?, ?, 'en', 'regular', 'intermediate', 'beta-consent-v1', ?, ?)",
+  ).run("pro_progress", "rider_progress_1234567", records[0].date, records[0].date);
+  for (const record of records) {
+    const progressionId = `pgs_progress_${record.index}`;
+    const sessionId = `ses_progress_${record.index}`;
+    const videoId = `vid_progress_${record.index}`;
+    const runId = `run_progress_${record.index}`;
+    database.prepare(
+      `INSERT INTO progressions
+        (id, profile_id, goal, framework, reference_video_id, status, created_at, updated_at)
+       VALUES (?, ?, 'medium', 'none', ?, 'active', ?, ?)`,
+    ).run(progressionId, "pro_progress", videoId, record.date, record.date);
+    database.prepare(
+      "INSERT INTO sessions (id, progression_id, camera_mode, view_angle, status, created_at, updated_at) VALUES (?, ?, 'fixed', 'three-quarter', 'completed', ?, ?)",
+    ).run(sessionId, progressionId, record.date, record.date);
+    database.prepare(
+      `INSERT INTO videos
+        (id, session_id, role, object_key, original_name, content_type, size_bytes, metadata_json, expires_at, created_at, updated_at)
+       VALUES (?, ?, 'reference', ?, 'reference.mp4', 'video/mp4', 10, ?, '2026-02-10T12:00:00.000Z', ?, ?)`,
+    ).run(videoId, sessionId, `source/progress/${record.index}`, JSON.stringify({ fingerprint: record.fingerprint }), record.date, record.date);
+    database.prepare(
+      `INSERT INTO analysis_runs
+        (id, session_id, status, stage, pipeline_version, created_at, updated_at)
+       VALUES (?, ?, 'completed', 'evidence_ready', 'video-intelligence-v0.2', ?, ?)`,
+    ).run(runId, sessionId, record.date, record.date);
+    database.prepare(
+      `INSERT INTO comparison_evidence
+        (id, analysis_run_id, metric_id, rank, confidence, effect_size, phase, user_timestamp_ms, reference_timestamp_ms, evidence_json)
+       VALUES (?, ?, 'knee_flexion_lead', 1, 0.86, 1.7, 'apex', 6000, 7000, ?)`,
+    ).run(`ev_progress_${record.index}`, runId, JSON.stringify({
+      reference_value: 45,
+      user_value: 45 + record.difference,
+      difference: record.difference,
+      unit: "degrees",
+      paired_turns: 3,
+    }));
+  }
+
+  const response = await fetchApp("http://snowtrace.test/api/progress", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ anonymousId: "rider_progress_1234567" }),
+  });
+  assert.equal(response.status, 200);
+  const progress = await response.json();
+  assert.equal(progress.history.length, 3);
+  assert.equal(progress.history[0].difference, 12);
+  assert.equal(progress.history[0].gapChange, 8);
+  assert.equal(progress.history[1].difference, 5);
+  assert.equal(progress.history[1].gapChange, null);
+  assert.equal(progress.history[2].gapChange, null);
+  assert.equal("referenceFingerprint" in progress.history[0], false);
+
+  database.prepare("DELETE FROM profiles WHERE id = ?").run("pro_progress");
 });
 
 test("reports worker availability without exposing runtime secrets", async () => {

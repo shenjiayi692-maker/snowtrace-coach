@@ -79,7 +79,7 @@ export async function POST(request: Request) {
         video.durationSeconds,
         video.width,
         video.height,
-        JSON.stringify({ browserPreflight: video.preflight }),
+        JSON.stringify({ browserPreflight: video.preflight, fingerprint: video.fingerprint }),
         expiresAt,
         now,
         now,

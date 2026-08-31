@@ -88,6 +88,7 @@ type SessionVideoSnapshot = {
   expires_at: string;
   playback_url: string;
   uploaded: boolean;
+  fingerprint: string | null;
   preflight: {
     resolutionScore?: number;
     durationScore?: number;
@@ -97,6 +98,16 @@ type SessionVideoSnapshot = {
 };
 
 type ServiceAvailability = "checking" | "available" | "unavailable";
+
+type ProgressHistoryItem = {
+  goal: Goal;
+  recordedAt: string;
+  metricId: string;
+  phase: TurnPhase;
+  difference: number;
+  unit: string;
+  gapChange: number | null;
+};
 
 const ACTIVE_SESSION_KEY = "snowtrace_active_session_v1";
 
@@ -111,6 +122,16 @@ const goalCopy: Record<Goal, { label: string; caption: string }> = {
   medium: { label: "Medium carving", caption: "Round, controlled turns" },
   short: { label: "Short turns", caption: "Quicker edge-to-edge timing" },
   dynamic: { label: "Dynamic carving", caption: "More range and commitment" },
+};
+
+const progressMetricLabels: Record<string, string> = {
+  knee_flexion_lead: "Lead knee angle",
+  knee_flexion_trail: "Trail knee angle",
+  pelvis_height: "Normalized pelvis height",
+  projected_inclination: "Projected body inclination",
+  fore_aft_pelvis: "Projected pelvis position",
+  upper_lower_separation: "Shoulder / pelvis alignment",
+  lead_trail_differential: "Lead / trail knee relationship",
 };
 
 const feedbackQuestions: Array<{
@@ -139,12 +160,33 @@ function formatEvidenceValue(value: number, unit: string) {
   return value.toFixed(2);
 }
 
+function progressTrend(item: ProgressHistoryItem) {
+  if (item.gapChange === null) return "First comparable baseline";
+  const tolerance = item.unit === "degrees" || item.unit === "deg" ? 1 : 0.01;
+  if (Math.abs(item.gapChange) < tolerance) return "Visible gap is about the same";
+  return `${formatEvidenceValue(Math.abs(item.gapChange), item.unit)} ${item.gapChange > 0 ? "closer to" : "farther from"} this reference`;
+}
+
 function contentTypeFor(file: File) {
   if (file.type.startsWith("video/")) return file.type;
   const extension = file.name.split(".").pop()?.toLowerCase();
   if (extension === "mov") return "video/quicktime";
   if (extension === "webm") return "video/webm";
   return "video/mp4";
+}
+
+async function fingerprintVideo(file: File) {
+  const chunkSize = 512 * 1024;
+  const first = new Uint8Array(await file.slice(0, Math.min(file.size, chunkSize)).arrayBuffer());
+  const lastStart = Math.max(0, file.size - chunkSize);
+  const last = new Uint8Array(await file.slice(lastStart, file.size).arrayBuffer());
+  const descriptor = new TextEncoder().encode(`snowtrace-video-v1:${file.size}:`);
+  const sample = new Uint8Array(descriptor.length + first.length + last.length);
+  sample.set(descriptor, 0);
+  sample.set(first, descriptor.length);
+  sample.set(last, descriptor.length + first.length);
+  const digest = await crypto.subtle.digest("SHA-256", sample);
+  return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("");
 }
 
 async function readApiResponse<T>(response: Response): Promise<T> {
@@ -219,6 +261,7 @@ function restoredInspection(video: SessionVideoSnapshot): VideoInspection | null
     durationScore: score(preflight.durationScore, scoreForRange(video.duration_seconds, 6, 20, 3, 30)),
     exposureScore: typeof preflight.exposureScore === "number" ? preflight.exposureScore : null,
     sharpnessScore: typeof preflight.sharpnessScore === "number" ? preflight.sharpnessScore : null,
+    fingerprint: video.fingerprint ?? "",
     previewUrl: video.playback_url,
   };
 }
@@ -255,6 +298,7 @@ function analyzePixels(data: Uint8ClampedArray, width: number, height: number) {
 }
 
 async function inspectVideo(file: File, role: VideoRole): Promise<VideoInspection> {
+  const fingerprintPromise = fingerprintVideo(file);
   const previewUrl = URL.createObjectURL(file);
   const video = document.createElement("video");
   video.preload = "metadata";
@@ -313,6 +357,7 @@ async function inspectVideo(file: File, role: VideoRole): Promise<VideoInspectio
     durationScore: scoreForRange(durationSeconds, 6, 20, 3, 30),
     exposureScore,
     sharpnessScore,
+    fingerprint: await fingerprintPromise,
     previewUrl,
   };
 }
@@ -585,6 +630,7 @@ export function CoachApp() {
   const [selectedTracks, setSelectedTracks] = useState<Partial<Record<VideoRole, number>>>({});
   const [feedbackAnswers, setFeedbackAnswers] = useState<FeedbackAnswers>({});
   const [feedbackStatus, setFeedbackStatus] = useState<"idle" | "sending" | "sent" | "error">("idle");
+  const [progressHistory, setProgressHistory] = useState<ProgressHistoryItem[]>([]);
   const referenceVideoRef = useRef<HTMLVideoElement>(null);
   const riderVideoRef = useRef<HTMLVideoElement>(null);
   const recordedBetaEvents = useRef(new Set<string>());
@@ -606,6 +652,21 @@ export function CoachApp() {
       recordedBetaEvents.current.delete(eventKey);
     }
   }, [analysisRunId, sessionId]);
+
+  const loadProgressHistory = useCallback(async () => {
+    try {
+      const response = await fetch("/api/progress", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ anonymousId: getAnonymousRiderId() }),
+        cache: "no-store",
+      });
+      const result = await readApiResponse<{ history: ProgressHistoryItem[] }>(response);
+      setProgressHistory(result.history);
+    } catch {
+      // Progress history is supporting context; it never blocks a new analysis.
+    }
+  }, []);
 
   const applySessionSnapshot = useCallback((snapshot: SessionSnapshot) => {
     if (!snapshot.run) {
@@ -683,6 +744,10 @@ export function CoachApp() {
   }, [checkServiceAvailability]);
 
   useEffect(() => {
+    void loadProgressHistory();
+  }, [loadProgressHistory]);
+
+  useEffect(() => {
     let active = true;
     const restore = async () => {
       let storedSessionId: string | null = null;
@@ -749,8 +814,11 @@ export function CoachApp() {
   }, [refreshQueue, screen, sessionId]);
 
   useEffect(() => {
-    if (screen === "report" && realEvidence) void recordBetaEvent("report_viewed");
-  }, [realEvidence, recordBetaEvent, screen]);
+    if (screen === "report" && realEvidence) {
+      void recordBetaEvent("report_viewed");
+      void loadProgressHistory();
+    }
+  }, [loadProgressHistory, realEvidence, recordBetaEvent, screen]);
 
   useEffect(() => {
     return () => {
@@ -855,6 +923,7 @@ export function CoachApp() {
             durationSeconds: inspection.durationSeconds,
             width: inspection.width,
             height: inspection.height,
+            fingerprint: inspection.fingerprint,
             preflight: {
               resolutionScore: inspection.resolutionScore,
               durationScore: inspection.durationScore,
@@ -978,6 +1047,7 @@ export function CoachApp() {
       setQueueMessage("Session deleted.");
       forgetActiveSession(sessionId);
       setScreen("upload");
+      void loadProgressHistory();
     } catch (cause) {
       setQueueMessage(cause instanceof Error ? cause.message : "The private session could not be deleted.");
     }
@@ -1166,6 +1236,34 @@ export function CoachApp() {
               Check analysis readiness <span aria-hidden="true">→</span>
             </button>
             <p className="privacy-line">Private source storage · 30-day deletion schedule · Delete queued clips anytime</p>
+          </section>
+
+          <section className="progress-history" aria-labelledby="progress-history-title">
+            <div className="progress-history-heading">
+              <div>
+                <span className="eyebrow">SAVED PROGRESSION · THIS DEVICE</span>
+                <h2 id="progress-history-title">Visible gap history</h2>
+              </div>
+              <p>Not a riding score. Snowtrace compares only like-for-like evidence against the same reference clip.</p>
+            </div>
+            {progressHistory.length ? (
+              <div className="progress-history-grid">
+                {progressHistory.slice(0, 3).map((item) => (
+                  <article key={`${item.recordedAt}-${item.metricId}-${item.phase}`}>
+                    <div>
+                      <span>{goalCopy[item.goal].label} · {item.phase}</span>
+                      <time dateTime={item.recordedAt}>{new Date(item.recordedAt).toLocaleDateString(undefined, { month: "short", day: "numeric" })}</time>
+                    </div>
+                    <h3>{progressMetricLabels[item.metricId] ?? "Visible movement gap"}</h3>
+                    <strong>{formatEvidenceValue(Math.abs(item.difference), item.unit)} from reference</strong>
+                    <p>{progressTrend(item)}</p>
+                  </article>
+                ))}
+              </div>
+            ) : (
+              <p className="progress-empty">Your first accepted comparison will become the baseline for a future like-for-like run.</p>
+            )}
+            <small>Same reference, goal, camera mode, view, metric and turn phase required. Filming differences can still affect 2D pose.</small>
           </section>
         </div>
       )}
