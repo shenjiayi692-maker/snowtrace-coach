@@ -49,6 +49,7 @@ export const videos = sqliteTable("videos", {
   width: integer("width"),
   height: integer("height"),
   metadataJson: text("metadata_json", { mode: "json" }),
+  uploadedAt: text("uploaded_at"),
   expiresAt: text("expires_at").notNull(),
   deletedAt: text("deleted_at"),
   ...timestamps,
@@ -177,4 +178,7 @@ export const feedbackEvents = sqliteTable("feedback_events", {
   eventType: text("event_type").notNull(),
   valueJson: text("value_json", { mode: "json" }),
   createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
-}, (table) => [index("feedback_events_analysis_idx").on(table.analysisRunId)]);
+}, (table) => [
+  index("feedback_events_analysis_idx").on(table.analysisRunId),
+  uniqueIndex("feedback_events_analysis_type_uq").on(table.analysisRunId, table.eventType),
+]);

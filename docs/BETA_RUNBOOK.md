@@ -75,11 +75,30 @@ separate from an unsupported measurement claim.
 
 ## Instrumentation
 
-The app records session creation, both-upload completion, analysis state,
-ambiguous-rider state, accepted evidence, report completion, and three feedback
-answers. The bearer-token-protected `/api/beta/metrics` endpoint summarizes the
-funnel. Store `BETA_METRICS_TOKEN` in Sites runtime settings; never place it in
-the beta issue log or a URL.
+The app records session creation, durable both-upload timestamps, analysis
+state, ambiguous-rider state, accepted evidence, the first report view, the
+first Show Me click, and three feedback answers. Report and Show Me events are
+idempotent per analysis run and are accepted only when that run has stored
+comparison evidence. The event records contain no filename, video content,
+pose data, IP address, or free-form rider text.
+
+The bearer-token-protected `/api/beta/metrics` endpoint summarizes the funnel.
+Store `BETA_METRICS_TOKEN` in Sites runtime settings; never place it in the beta
+issue log or a URL. Its key fields map to the gates as follows:
+
+- `sessionsWithBothUploads`: two distinct video roles have `uploaded_at`; it
+  remains historically correct after the R2 objects expire;
+- `acceptedEvidenceRuns`: runs with at least one stored evidence item;
+- `actionableEvidenceOrRider`: accepted-evidence runs plus runs currently
+  awaiting rider selection;
+- `reportsViewed`: evidence-backed reports actually opened in the web client;
+- `showMeClicked`: reports where the rider explicitly recentered the paired
+  evidence frame;
+- `ridersWithSecondSessionWithin7Days`: profiles with two completed two-video
+  uploads no more than seven days apart.
+
+Do not substitute `analysis_runs.status = completed` for report completion: a
+completed run can legitimately contain no reliable evidence and no report.
 
 Before any beta upload, the interface requires the rider to confirm that they
 are at least 18, have permission to use both clips (including visible people),
@@ -114,12 +133,12 @@ Use absolute counts alongside percentages because the cohort is small.
 | Signal | Go | Investigate / iterate | Stop or redesign |
 | --- | ---: | ---: | ---: |
 | Complete both uploads | at least 16/20 | 12–15/20 | fewer than 12/20 |
-| Reach accepted evidence or actionable rider-selection state | at least 14/20 | 10–13/20 | fewer than 10/20 |
+| Reach accepted evidence or actionable rider-selection state (`actionableEvidenceOrRider`) | at least 14/20 | 10–13/20 | fewer than 10/20 |
 | Instructor: metric direction plausible | at least 80% of accepted reports | 65–79% | below 65% |
 | Rider can see the highlighted gap | at least 70% | 50–69% | below 50% |
 | Report useful or partly useful | at least 70% | 50–69% | below 50% |
 | “Yes” to trying the drill | at least 60% | 40–59% | below 40% |
-| Second upload within 7 days | at least 8/20 | 5–7/20 | fewer than 5/20 |
+| Second upload within 7 days (`ridersWithSecondSessionWithin7Days`) | at least 8/20 | 5–7/20 | fewer than 5/20 |
 | Material or safety-critical misleading claims | 0 | — | 1 or more |
 
 Operational targets for this small beta:

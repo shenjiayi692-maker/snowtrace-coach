@@ -33,6 +33,9 @@ analysis service.
   drills, progression, and feedback; R2 binding reserved for source/proxy video
 - Authenticated, idempotent retention cleanup for expired source and proxy
   objects, with an opportunistic bounded pass during session creation
+- Durable upload timestamps and idempotent evidence-view events so beta funnel
+  metrics remain correct after video expiry and do not count no-evidence runs
+  as completed reports
 
 The MVP is snowboard carving only. It does not claim force, pressure, exact
 board edge angle, or physically accurate 3D measurements. It does not train a

@@ -587,6 +587,25 @@ export function CoachApp() {
   const [feedbackStatus, setFeedbackStatus] = useState<"idle" | "sending" | "sent" | "error">("idle");
   const referenceVideoRef = useRef<HTMLVideoElement>(null);
   const riderVideoRef = useRef<HTMLVideoElement>(null);
+  const recordedBetaEvents = useRef(new Set<string>());
+
+  const recordBetaEvent = useCallback(async (eventType: "report_viewed" | "show_me_clicked") => {
+    if (!sessionId || !analysisRunId) return;
+    const eventKey = `${analysisRunId}:${eventType}`;
+    if (recordedBetaEvents.current.has(eventKey)) return;
+    recordedBetaEvents.current.add(eventKey);
+    try {
+      const response = await fetch("/api/events", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ sessionId, analysisRunId, eventType }),
+        keepalive: true,
+      });
+      if (!response.ok) recordedBetaEvents.current.delete(eventKey);
+    } catch {
+      recordedBetaEvents.current.delete(eventKey);
+    }
+  }, [analysisRunId, sessionId]);
 
   const applySessionSnapshot = useCallback((snapshot: SessionSnapshot) => {
     if (!snapshot.run) {
@@ -728,6 +747,10 @@ export function CoachApp() {
       window.clearInterval(timer);
     };
   }, [refreshQueue, screen, sessionId]);
+
+  useEffect(() => {
+    if (screen === "report" && realEvidence) void recordBetaEvent("report_viewed");
+  }, [realEvidence, recordBetaEvent, screen]);
 
   useEffect(() => {
     return () => {
@@ -1419,7 +1442,7 @@ export function CoachApp() {
               </div>
               <div className="moment-tabs" role="tablist" aria-label="Turn phase">
                 {[realEvidence.phase].map((moment) => (
-                  <button type="button" role="tab" aria-selected={activeMoment === moment} className={activeMoment === moment ? "active" : ""} onClick={() => { setActiveMoment(moment); window.setTimeout(seekEvidence, 0); }} key={moment}>
+                  <button type="button" role="tab" aria-selected={activeMoment === moment} className={activeMoment === moment ? "active" : ""} onClick={() => { setActiveMoment(moment); void recordBetaEvent("show_me_clicked"); window.setTimeout(seekEvidence, 0); }} key={moment}>
                     {moment}
                   </button>
                 ))}

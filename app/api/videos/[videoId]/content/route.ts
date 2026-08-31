@@ -98,8 +98,9 @@ export async function PUT(request: Request, context: { params: Promise<{ videoId
       await env.VIDEOS.delete(row.object_key);
       return jsonError("The upload was incomplete. Please try again.", 409);
     }
-    await env.DB.prepare("UPDATE videos SET updated_at = ? WHERE id = ?")
-      .bind(new Date().toISOString(), row.id)
+    const uploadedAt = new Date().toISOString();
+    await env.DB.prepare("UPDATE videos SET uploaded_at = ?, updated_at = ? WHERE id = ?")
+      .bind(uploadedAt, uploadedAt, row.id)
       .run();
     return Response.json({ videoId: row.id, role: row.role, sizeBytes: object.size }, { headers: { "cache-control": "no-store" } });
   } catch (error) {

@@ -50,7 +50,9 @@ export async function POST(request: Request) {
   const now = new Date().toISOString();
   try {
     await env.DB.batch(parsed.map((event) => env.DB.prepare(
-      "INSERT INTO feedback_events (id, profile_id, analysis_run_id, event_type, value_json, created_at) VALUES (?, ?, ?, ?, ?, ?)",
+      `INSERT INTO feedback_events (id, profile_id, analysis_run_id, event_type, value_json, created_at)
+       VALUES (?, ?, ?, ?, ?, ?)
+       ON CONFLICT(analysis_run_id, event_type) DO UPDATE SET value_json = excluded.value_json`,
     ).bind(`fb_${crypto.randomUUID()}`, owner.profile_id, body.analysisRunId, event.eventType, JSON.stringify({ answer: event.value }), now)));
     return Response.json({ accepted: true, count: parsed.length }, { status: 201, headers: { "cache-control": "no-store" } });
   } catch (error) {

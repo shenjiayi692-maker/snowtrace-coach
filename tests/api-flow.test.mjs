@@ -201,6 +201,10 @@ test("creates, uploads, queues, reads and deletes a real analysis session", asyn
     }));
     assert.equal(uploadResponse.status, 200, await uploadResponse.clone().text());
   }
+  assert.equal(
+    database.prepare("SELECT COUNT(*) AS count FROM videos WHERE session_id = ? AND uploaded_at IS NOT NULL").get(created.sessionId).count,
+    2,
+  );
 
   const uploadedReference = created.videos.find((video) => video.role === "reference");
   const fullPlaybackResponse = await fetchApp(new URL(uploadedReference.uploadUrl, "http://snowtrace.test"), { method: "GET" });
@@ -323,6 +327,33 @@ test("creates, uploads, queues, reads and deletes a real analysis session", asyn
   assert.deepEqual(status.videos.map((video) => video.uploaded).sort(), [true, true]);
   assert.ok(status.videos.every((video) => video.playback_url.includes(created.sessionId)));
 
+  const reportViewedEvent = {
+    sessionId: created.sessionId,
+    analysisRunId: queued.analysisRunId,
+    eventType: "report_viewed",
+  };
+  const firstReportView = await fetchApp("http://snowtrace.test/api/events", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(reportViewedEvent),
+  });
+  assert.equal(firstReportView.status, 201);
+  assert.deepEqual(await firstReportView.json(), { accepted: true, recorded: true });
+  const duplicateReportView = await fetchApp("http://snowtrace.test/api/events", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(reportViewedEvent),
+  });
+  assert.equal(duplicateReportView.status, 201);
+  assert.deepEqual(await duplicateReportView.json(), { accepted: true, recorded: false });
+  const showMeEvent = await fetchApp("http://snowtrace.test/api/events", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ ...reportViewedEvent, eventType: "show_me_clicked" }),
+  });
+  assert.equal(showMeEvent.status, 201);
+  assert.deepEqual(await showMeEvent.json(), { accepted: true, recorded: true });
+
   const feedbackResponse = await fetchApp("http://snowtrace.test/api/feedback", {
     method: "POST",
     headers: { "content-type": "application/json" },
@@ -337,6 +368,24 @@ test("creates, uploads, queues, reads and deletes a real analysis session", asyn
     }),
   });
   assert.equal(feedbackResponse.status, 201, await feedbackResponse.clone().text());
+  const duplicateFeedbackResponse = await fetchApp("http://snowtrace.test/api/feedback", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      sessionId: created.sessionId,
+      analysisRunId: queued.analysisRunId,
+      events: [
+        { eventType: "report_helpfulness", value: "yes" },
+        { eventType: "evidence_clarity", value: "yes" },
+        { eventType: "drill_intent", value: "yes" },
+      ],
+    }),
+  });
+  assert.equal(duplicateFeedbackResponse.status, 201);
+  assert.equal(
+    database.prepare("SELECT COUNT(*) AS count FROM feedback_events WHERE analysis_run_id = ?").get(queued.analysisRunId).count,
+    5,
+  );
 
   const metricsResponse = await fetchApp("http://snowtrace.test/api/beta/metrics", {
     headers: { authorization: "Bearer beta-metrics-test-token" },
@@ -345,9 +394,16 @@ test("creates, uploads, queues, reads and deletes a real analysis session", asyn
   const metrics = await metricsResponse.json();
   assert.equal(metrics.funnel.sessionsCreated, 1);
   assert.equal(metrics.funnel.participants, 1);
+  assert.equal(metrics.funnel.sessionsWithBothUploads, 1);
+  assert.equal(metrics.funnel.acceptedEvidenceRuns, 1);
+  assert.equal(metrics.funnel.actionableEvidenceOrRider, 1);
+  assert.equal(metrics.funnel.reportsViewed, 1);
+  assert.equal(metrics.funnel.showMeClicked, 1);
   assert.equal(metrics.funnel.ridersWithSecondSessionWithin7Days, 0);
   assert.equal(metrics.funnel.uploadCompletionRatePct, 100);
+  assert.equal(metrics.funnel.actionableStateRatePct, 100);
   assert.equal(metrics.funnel.reportCompletionRatePct, 100);
+  assert.equal(metrics.funnel.showMeEngagementRatePct, 100);
   assert.equal(metrics.coaching.helpfulOrPartlyPct, 100);
   assert.equal(metrics.coaching.drillIntentYesPct, 100);
 
@@ -374,6 +430,12 @@ test("creates, uploads, queues, reads and deletes a real analysis session", asyn
   const noEvidenceSnapshot = await (await fetchApp(new URL(created.statusUrl, "http://snowtrace.test"))).json();
   assert.equal(noEvidenceSnapshot.outcome.kind, "no_evidence");
   assert.equal(noEvidenceSnapshot.outcome.retryable, false);
+  const noEvidenceEvent = await fetchApp("http://snowtrace.test/api/events", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(reportViewedEvent),
+  });
+  assert.equal(noEvidenceEvent.status, 409);
 
   const rejectedCallback = await fetchApp(`http://snowtrace.test/api/analysis-callback/${queued.analysisRunId}`, {
     method: "POST",
@@ -396,6 +458,56 @@ test("creates, uploads, queues, reads and deletes a real analysis session", asyn
   assert.equal(deleteResponse.status, 204);
   const missingResponse = await fetchApp(new URL(created.statusUrl, "http://snowtrace.test"));
   assert.equal(missingResponse.status, 404);
+});
+
+test("counts a second completed upload within seven days without relying on retained R2 objects", async () => {
+  const firstUploadedAt = "2026-01-10T12:00:00.000Z";
+  const secondUploadedAt = "2026-01-13T12:00:00.000Z";
+  const expiresAt = "2026-02-12T12:00:00.000Z";
+  database.prepare(
+    "INSERT INTO profiles (id, anonymous_id, locale, stance, level, consent_version, created_at, updated_at) VALUES (?, ?, 'en', 'goofy', 'intermediate', 'beta-consent-v1', ?, ?)",
+  ).run("pro_repeat", "rider_repeat_123456789", firstUploadedAt, firstUploadedAt);
+  for (const [index, uploadedAt] of [firstUploadedAt, secondUploadedAt].entries()) {
+    const progressionId = `pgs_repeat_${index}`;
+    const sessionId = `ses_repeat_${index}`;
+    database.prepare(
+      "INSERT INTO progressions (id, profile_id, goal, framework, status, created_at, updated_at) VALUES (?, ?, 'medium', 'none', 'active', ?, ?)",
+    ).run(progressionId, "pro_repeat", uploadedAt, uploadedAt);
+    database.prepare(
+      "INSERT INTO sessions (id, progression_id, camera_mode, view_angle, status, created_at, updated_at) VALUES (?, ?, 'fixed', 'three-quarter', 'draft', ?, ?)",
+    ).run(sessionId, progressionId, uploadedAt, uploadedAt);
+    for (const role of ["reference", "rider"]) {
+      database.prepare(
+        `INSERT INTO videos
+          (id, session_id, role, object_key, original_name, content_type, size_bytes, uploaded_at, expires_at, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, 'video/mp4', 10, ?, ?, ?, ?)`,
+      ).run(
+        `vid_repeat_${index}_${role}`,
+        sessionId,
+        role,
+        `source/repeat/${index}/${role}`,
+        `${role}.mp4`,
+        uploadedAt,
+        expiresAt,
+        uploadedAt,
+        uploadedAt,
+      );
+    }
+  }
+
+  const response = await fetchApp("http://snowtrace.test/api/beta/metrics", {
+    headers: { authorization: "Bearer beta-metrics-test-token" },
+  });
+  assert.equal(response.status, 200);
+  const metrics = await response.json();
+  assert.equal(metrics.funnel.sessionsCreated, 2);
+  assert.equal(metrics.funnel.sessionsWithBothUploads, 2);
+  assert.equal(metrics.funnel.participants, 1);
+  assert.equal(metrics.funnel.ridersWithSecondSessionWithin7Days, 1);
+  assert.equal(metrics.funnel.sevenDayRepeatRatePct, 100);
+  assert.equal(globalThis.__snowtraceCloudflareEnv.VIDEOS.objects.size, 0);
+
+  database.prepare("DELETE FROM profiles WHERE id = ?").run("pro_repeat");
 });
 
 test("reports worker availability without exposing runtime secrets", async () => {

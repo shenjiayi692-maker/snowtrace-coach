@@ -15,6 +15,13 @@
       "when": 1786722039836,
       "tag": "0001_square_leech",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1788167839521,
+      "tag": "0002_wide_thor",
+      "breakpoints": true
     }
   ]
 }
