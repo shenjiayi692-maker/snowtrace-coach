@@ -12,7 +12,7 @@ class ApiTests(unittest.TestCase):
         response = TestClient(app).get("/health")
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json()["status"], "ok")
-        self.assertEqual(response.json()["pipeline_version"], "video-intelligence-v0.2")
+        self.assertEqual(response.json()["pipeline_version"], "video-intelligence-v0.3")
 
     def test_ready_checks_runtime_dependencies(self):
         with patch("snowtrace_analysis.api.shutil.which", return_value="/usr/bin/tool"):

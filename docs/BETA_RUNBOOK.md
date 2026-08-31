@@ -156,6 +156,12 @@ Operational targets for this small beta:
 - every rejected clip receives a specific recapture instruction;
 - every accepted claim has visible confidence and two Show Me timestamps.
 
+For Auto Trim audits, compare pose coverage only within the selected rider
+segment. Track clip-level setup/waiting time separately. Blur, camera stability,
+rider size, landmark visibility, occlusion continuity, and usable turns remain
+separate checks; a good aggregate score must not override a blocked clarity or
+stability check into full metric access.
+
 ## Go / no-go logic
 
 Go to the next product iteration only if there are no material misleading

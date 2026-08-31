@@ -117,7 +117,7 @@ class VideoAnalysisResult:
     metrics: list[MetricSeries]
     status: Literal["needs_rider", "rejected", "completed"]
     selected_track: RiderTrack | None = field(default=None, repr=False)
-    pipeline_version: str = "video-intelligence-v0.2"
+    pipeline_version: str = "video-intelligence-v0.3"
 
     def to_dict(self) -> dict[str, Any]:
         return {

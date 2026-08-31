@@ -19,7 +19,6 @@ FULL_METRICS = [
 
 def build_quality_gate(
     track: RiderTrack,
-    analyzed_frames: int,
     turns: list[Turn],
     *,
     blur_score: float,
@@ -28,13 +27,14 @@ def build_quality_gate(
     camera_mode: str,
 ) -> QualityGateResult:
     observations = track.observations
-    coverage = len(observations) / max(1, analyzed_frames)
+    segment_frames = _active_segment_frames(track)
+    coverage = min(1.0, len(observations) / segment_frames)
     visibility = float(np.mean([item.mean_visibility for item in observations])) if observations else 0.0
     bbox_height = float(np.median([item.bbox[3] - item.bbox[1] for item in observations])) if observations else 0.0
     gap_ratio = _gap_ratio(track)
     turn_score = min(100.0, len(turns) / 3.0 * 100.0)
     checks = [
-        _check("pose_coverage", "Rider visibility", coverage * 100.0, 25.0, f"Pose present in {coverage:.0%} of sampled frames"),
+        _check("pose_coverage", "Rider visibility", coverage * 100.0, 25.0, f"Pose present in {coverage:.0%} of the selected segment"),
         _check("full_body", "Full-body visibility", visibility * 100.0, 20.0, f"Critical landmark confidence {visibility:.0%}"),
         _check("rider_size", "Rider size", min(100.0, bbox_height / 0.35 * 100.0), 15.0, f"Median rider height {bbox_height:.0%} of frame"),
         _check("motion_blur", "Motion clarity", blur_score, 10.0, "Median Laplacian frame clarity"),
@@ -58,10 +58,15 @@ def build_quality_gate(
     if len(turns) < 2:
         failures.append("insufficient_turns")
         instructions.append("Record at least three connected S-turns.")
+    if blur_score < 50:
+        instructions.append("Use brighter light and avoid digital zoom so the rider stays sharp.")
+    if stability_score < 50:
+        instructions.append("Brace the camera or use a fixed tripod position with less panning.")
+    limited_by_capture = blur_score < 50 or stability_score < 50
     if failures or readiness < 55:
         status = "rejected"
         allowed: list[str] = []
-    elif readiness < 75 or camera_mode == "follow":
+    elif readiness < 75 or camera_mode == "follow" or limited_by_capture:
         status = "limited"
         allowed = [
             "knee_flexion_lead", "knee_flexion_trail", "pelvis_height",
@@ -85,3 +90,9 @@ def _gap_ratio(track: RiderTrack) -> float:
     frames = [item.frame_index for item in track.observations]
     span = frames[-1] - frames[0] + 1
     return max(0.0, 1.0 - len(frames) / max(1, span))
+
+
+def _active_segment_frames(track: RiderTrack) -> int:
+    if not track.observations:
+        return 1
+    return max(1, track.observations[-1].frame_index - track.observations[0].frame_index + 1)

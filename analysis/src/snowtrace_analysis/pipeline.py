@@ -60,7 +60,6 @@ class AnalysisPipeline:
         stability_score = estimate_camera_stability(proxy_path)
         quality = build_quality_gate(
             selected,
-            analyzed_frames,
             turns,
             blur_score=blur_score,
             exposure_score=exposure_score,

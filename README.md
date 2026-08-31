@@ -25,6 +25,9 @@ analysis service.
 - Multi-person pose tracking with an explicit rider-selection state when the
   main subject is ambiguous, including representative-frame boxes and a
   selected-track re-run
+- Auto Trim quality scoring over the selected rider segment rather than clip
+  setup time, while blur, camera stability, rider size, and usable turns remain
+  independent gates; blocked blur or stability limits metric availability
 - Turn segmentation, phase normalization, confidence-aware metric comparison,
   and strict evidence thresholds
 - Evidence-frame pose snapshots rendered as synchronized skeleton overlays in
