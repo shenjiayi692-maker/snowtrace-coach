@@ -22,6 +22,13 @@
       "when": 1788167839521,
       "tag": "0002_wide_thor",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "6",
+      "when": 1788186409886,
+      "tag": "0003_red_wrecking_crew",
+      "breakpoints": true
     }
   ]
 }

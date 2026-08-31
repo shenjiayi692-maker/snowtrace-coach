@@ -7,10 +7,16 @@ export const dynamic = "force-dynamic";
 
 type VideoRow = { id: string; role: "reference" | "rider"; object_key: string };
 type ExistingRun = { id: string; status: string; stage: string | null };
-type SessionRow = { id: string; camera_mode: "fixed" | "follow" };
+type Stance = "regular" | "goofy";
+type SessionRow = {
+  id: string;
+  camera_mode: "fixed" | "follow";
+  rider_stance: Stance;
+  reference_stance: Stance;
+};
 type SelectedTrackIds = Partial<Record<"reference" | "rider", number>>;
 
-async function dispatchToWorker(request: Request, runId: string, cameraMode: "fixed" | "follow", videos: VideoRow[], selectedTrackIds: SelectedTrackIds = {}) {
+async function dispatchToWorker(request: Request, runId: string, session: SessionRow, videos: VideoRow[], selectedTrackIds: SelectedTrackIds = {}) {
   if (!analysisServiceConfigured(env)) return "awaiting_worker";
   let serviceUrl: URL;
   try {
@@ -49,7 +55,9 @@ async function dispatchToWorker(request: Request, runId: string, cameraMode: "fi
         analysis_id: runId,
         reference: { source_url: sourceUrls[0], first_edge: "unknown", selected_track_id: selectedTrackIds.reference ?? null },
         rider: { source_url: sourceUrls[1], first_edge: "unknown", selected_track_id: selectedTrackIds.rider ?? null },
-        camera_mode: cameraMode,
+        reference_stance: session.reference_stance,
+        rider_stance: session.rider_stance,
+        camera_mode: session.camera_mode,
         proxy_upload_urls: { reference: proxyUrls[0], rider: proxyUrls[1] },
         callback_url: new URL(`/api/analysis-callback/${encodeURIComponent(runId)}`, origin).toString(),
       }),
@@ -94,7 +102,9 @@ export async function POST(request: Request, context: { params: Promise<{ sessio
       return jsonError("Rider selection must be valid JSON.", 400);
     }
   }
-  const session = await env.DB.prepare("SELECT id, camera_mode FROM sessions WHERE id = ?").bind(sessionId).first<SessionRow>();
+  const session = await env.DB.prepare(
+    "SELECT id, camera_mode, rider_stance, reference_stance FROM sessions WHERE id = ?",
+  ).bind(sessionId).first<SessionRow>();
   if (!session) return jsonError("The analysis session was not found.", 404);
 
   const videoResult = await env.DB.prepare(
@@ -119,14 +129,14 @@ export async function POST(request: Request, context: { params: Promise<{ sessio
       await env.DB.prepare(
         "UPDATE analysis_runs SET status = 'queued', stage = 'dispatching', error_code = NULL, completed_at = NULL, updated_at = ? WHERE id = ?",
       ).bind(new Date().toISOString(), existing.id).run();
-      stage = await dispatchToWorker(request, existing.id, session.camera_mode, videos, selectedTrackIds);
+      stage = await dispatchToWorker(request, existing.id, session, videos, selectedTrackIds);
       await env.DB.prepare("UPDATE analysis_runs SET stage = ?, updated_at = ? WHERE id = ?")
         .bind(stage, new Date().toISOString(), existing.id)
         .run();
       return Response.json({ analysisRunId: existing.id, status: "queued", stage, reused: true }, { status: 202, headers: { "cache-control": "no-store" } });
     }
     if (existing.status === "queued" && stage !== "worker_dispatched") {
-      stage = await dispatchToWorker(request, existing.id, session.camera_mode, videos);
+      stage = await dispatchToWorker(request, existing.id, session, videos);
       await env.DB.prepare("UPDATE analysis_runs SET stage = ?, updated_at = ? WHERE id = ?")
         .bind(stage, new Date().toISOString(), existing.id)
         .run();
@@ -140,7 +150,7 @@ export async function POST(request: Request, context: { params: Promise<{ sessio
     await env.DB.batch([
       env.DB.prepare(
         `INSERT INTO analysis_runs (id, session_id, status, stage, pipeline_version, model_version, started_at, created_at, updated_at)
-         VALUES (?, ?, 'queued', 'dispatching', 'video-intelligence-v0.3', 'mediapipe-pose-landmarker-lite', ?, ?, ?)`,
+         VALUES (?, ?, 'queued', 'dispatching', 'video-intelligence-v0.4', 'mediapipe-pose-landmarker-lite', ?, ?, ?)`,
       ).bind(analysisRunId, sessionId, now, now, now),
       env.DB.prepare("UPDATE sessions SET status = 'processing', updated_at = ? WHERE id = ?").bind(now, sessionId),
     ]);
@@ -149,7 +159,7 @@ export async function POST(request: Request, context: { params: Promise<{ sessio
     return jsonError("The analysis job could not be queued.", 500);
   }
 
-  const stage = await dispatchToWorker(request, analysisRunId, session.camera_mode, videos);
+  const stage = await dispatchToWorker(request, analysisRunId, session, videos);
   await env.DB.prepare("UPDATE analysis_runs SET stage = ?, updated_at = ? WHERE id = ?")
     .bind(stage, new Date().toISOString(), analysisRunId)
     .run();

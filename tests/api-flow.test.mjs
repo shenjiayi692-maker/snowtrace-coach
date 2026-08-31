@@ -80,6 +80,7 @@ class R2Mock {
 
 let worker;
 let database;
+let analysisRequests = [];
 
 before(async () => {
   database = new DatabaseSync(":memory:");
@@ -104,6 +105,7 @@ before(async () => {
   globalThis.fetch = async (input, init) => {
     const request = input instanceof Request ? input : new Request(input, init);
     if (new URL(request.url).hostname === "analysis.test") {
+      analysisRequests.push(await request.clone().json());
       return Response.json({ status: "accepted" }, { status: 202 });
     }
     return nativeFetch(input, init);
@@ -159,6 +161,7 @@ test("creates, uploads, queues, reads and deletes a real analysis session", asyn
       cameraMode: "fixed",
       viewAngle: "three-quarter",
       stance: "regular",
+      referenceStance: "goofy",
       videos: [
         {
           role: "reference",
@@ -193,6 +196,9 @@ test("creates, uploads, queues, reads and deletes a real analysis session", asyn
     database.prepare("SELECT consent_version FROM profiles WHERE anonymous_id = ?").get("rider_1234567890abcdef").consent_version,
     "beta-consent-v1",
   );
+  const storedStances = database.prepare("SELECT rider_stance, reference_stance FROM sessions WHERE id = ?").get(created.sessionId);
+  assert.equal(storedStances.rider_stance, "regular");
+  assert.equal(storedStances.reference_stance, "goofy");
 
   for (const video of created.videos) {
     const bytes = sourceBytes[video.role];
@@ -231,6 +237,8 @@ test("creates, uploads, queues, reads and deletes a real analysis session", asyn
   const queued = await queueResponse.json();
   assert.match(queued.analysisRunId, /^run_/);
   assert.equal(queued.status, "queued");
+  assert.equal(analysisRequests.at(-1).rider_stance, "regular");
+  assert.equal(analysisRequests.at(-1).reference_stance, "goofy");
 
   const expires = Math.floor(Date.now() / 1000) + 60;
   const referenceVideo = created.videos.find((video) => video.role === "reference");
@@ -536,7 +544,7 @@ test("counts a second completed upload within seven days without relying on reta
 test("computes a visible-gap trend only for matching reference and capture context", async () => {
   const records = [
     { index: 0, date: "2026-01-01T12:00:00.000Z", fingerprint: "c".repeat(64), difference: 20 },
-    { index: 1, date: "2026-01-02T12:00:00.000Z", fingerprint: "d".repeat(64), difference: 5 },
+    { index: 1, date: "2026-01-02T12:00:00.000Z", fingerprint: "c".repeat(64), difference: 5 },
     { index: 2, date: "2026-01-03T12:00:00.000Z", fingerprint: "c".repeat(64), difference: 12 },
   ];
   database.prepare(
@@ -553,8 +561,8 @@ test("computes a visible-gap trend only for matching reference and capture conte
        VALUES (?, ?, 'medium', 'none', ?, 'active', ?, ?)`,
     ).run(progressionId, "pro_progress", videoId, record.date, record.date);
     database.prepare(
-      "INSERT INTO sessions (id, progression_id, camera_mode, view_angle, status, created_at, updated_at) VALUES (?, ?, 'fixed', 'three-quarter', 'completed', ?, ?)",
-    ).run(sessionId, progressionId, record.date, record.date);
+      "INSERT INTO sessions (id, progression_id, camera_mode, view_angle, rider_stance, reference_stance, status, created_at, updated_at) VALUES (?, ?, 'fixed', 'three-quarter', ?, ?, 'completed', ?, ?)",
+    ).run(sessionId, progressionId, record.index === 1 ? "goofy" : "regular", record.index === 1 ? "goofy" : "regular", record.date, record.date);
     database.prepare(
       `INSERT INTO videos
         (id, session_id, role, object_key, original_name, content_type, size_bytes, metadata_json, expires_at, created_at, updated_at)
@@ -592,6 +600,8 @@ test("computes a visible-gap trend only for matching reference and capture conte
   assert.equal(progress.history[1].gapChange, null);
   assert.equal(progress.history[2].gapChange, null);
   assert.equal("referenceFingerprint" in progress.history[0], false);
+  assert.equal("riderStance" in progress.history[0], false);
+  assert.equal("referenceStance" in progress.history[0], false);
 
   database.prepare("DELETE FROM profiles WHERE id = ?").run("pro_progress");
 });
@@ -603,7 +613,7 @@ test("reports worker availability without exposing runtime secrets", async () =>
   assert.deepEqual(status, {
     analysisAvailable: true,
     productScope: "snowboard_carving",
-    pipelineVersion: "video-intelligence-v0.3",
+    pipelineVersion: "video-intelligence-v0.4",
   });
   assert.equal(JSON.stringify(status).includes("callback-test-token"), false);
 
@@ -621,6 +631,7 @@ test("requires the current video consent before creating a session", async () =>
       cameraMode: "fixed",
       viewAngle: "three-quarter",
       stance: "regular",
+      referenceStance: "regular",
       videos: [],
     }),
   });

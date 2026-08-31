@@ -612,6 +612,7 @@ export function CoachApp() {
   const [camera, setCamera] = useState("fixed");
   const [view, setView] = useState("three-quarter");
   const [stance, setStance] = useState("regular");
+  const [referenceStance, setReferenceStance] = useState("regular");
   const [adultAndRightsConfirmed, setAdultAndRightsConfirmed] = useState(false);
   const [retentionAcknowledged, setRetentionAcknowledged] = useState(false);
   const [activeStage, setActiveStage] = useState(0);
@@ -912,6 +913,7 @@ export function CoachApp() {
           cameraMode: camera,
           viewAngle: view,
           stance,
+          referenceStance,
           videos: [
             { inspection: reference, file: referenceFile },
             { inspection: rider, file: riderFile },
@@ -1204,9 +1206,15 @@ export function CoachApp() {
                 ]}
               />
               <ContextSelector
-                label="Stance"
+                label="Your stance"
                 value={stance}
                 onChange={setStance}
+                options={[{ value: "regular", label: "Regular" }, { value: "goofy", label: "Goofy" }]}
+              />
+              <ContextSelector
+                label="Reference stance"
+                value={referenceStance}
+                onChange={setReferenceStance}
                 options={[{ value: "regular", label: "Regular" }, { value: "goofy", label: "Goofy" }]}
               />
             </div>
@@ -1263,7 +1271,7 @@ export function CoachApp() {
             ) : (
               <p className="progress-empty">Your first accepted comparison will become the baseline for a future like-for-like run.</p>
             )}
-            <small>Same reference, goal, camera mode, view, metric and turn phase required. Filming differences can still affect 2D pose.</small>
+            <small>Same reference, goal, camera mode, view, both stances, metric and turn phase required. Filming differences can still affect 2D pose.</small>
           </section>
         </div>
       )}

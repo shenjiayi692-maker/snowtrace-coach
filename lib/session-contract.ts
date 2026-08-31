@@ -34,6 +34,7 @@ export type CreateSessionInput = {
   cameraMode: "fixed" | "follow";
   viewAngle: "three-quarter" | "side" | "front-rear";
   stance: "regular" | "goofy";
+  referenceStance: "regular" | "goofy";
   videos: SessionVideoInput[];
 };
 
@@ -107,6 +108,9 @@ export function parseCreateSessionInput(input: unknown): ParseResult {
   if (typeof value.cameraMode !== "string" || !cameras.has(value.cameraMode)) return { ok: false, error: "Choose a supported camera mode." };
   if (typeof value.viewAngle !== "string" || !views.has(value.viewAngle)) return { ok: false, error: "Choose a supported view angle." };
   if (typeof value.stance !== "string" || !stances.has(value.stance)) return { ok: false, error: "Choose regular or goofy stance." };
+  if (typeof value.referenceStance !== "string" || !stances.has(value.referenceStance)) {
+    return { ok: false, error: "Choose the reference rider's stance." };
+  }
   if (!Array.isArray(value.videos) || value.videos.length !== 2) return { ok: false, error: "Provide one reference video and one rider video." };
 
   const videos = value.videos.map(parseVideo);
@@ -129,6 +133,7 @@ export function parseCreateSessionInput(input: unknown): ParseResult {
       cameraMode: value.cameraMode as CreateSessionInput["cameraMode"],
       viewAngle: value.viewAngle as CreateSessionInput["viewAngle"],
       stance: value.stance as CreateSessionInput["stance"],
+      referenceStance: value.referenceStance as CreateSessionInput["referenceStance"],
       videos: parsedVideos,
     },
   };

@@ -35,7 +35,8 @@ group.
 ## Rider protocol
 
 1. Rider selects one reference clip and one recent clip of their own.
-2. Rider records goal, stance, camera mode, and view.
+2. Rider records goal, their own stance, the reference rider's stance, camera
+   mode, and view. Do not assume the reference uses the rider's stance.
 3. Snowtrace runs browser preflight, upload, pose quality, rider selection when
    necessary, turn alignment, and confidence filtering.
 4. If accepted, rider opens Show Me before reading the possible explanation.
@@ -103,8 +104,8 @@ completed run can legitimately contain no reliable evidence and no report.
 
 The upload page shows at most three recent evidence-backed gaps for the
 anonymous device identity. It computes a directional gap change only when the
-reference file fingerprint, goal, camera mode, view, metric, phase, and unit all
-match a prior record. Label this as movement relative to one reference, never
+reference file fingerprint, goal, camera mode, view, rider stance, reference
+stance, metric, phase, and unit all match a prior record. Label this as movement relative to one reference, never
 as skill, certification level, or proof that technique improved. A different
 reference or filming context starts a new baseline.
 
@@ -161,6 +162,11 @@ segment. Track clip-level setup/waiting time separately. Blur, camera stability,
 rider size, landmark visibility, occlusion continuity, and usable turns remain
 separate checks; a good aggregate score must not override a blocked clarity or
 stability check into full metric access.
+
+For stance audits, confirm regular maps the left leg to lead and goofy maps the
+right leg to lead for both videos independently. The signed fore/aft proxy is
+positive toward the selected anatomical lead foot. Never infer the reference
+stance from the user's stance.
 
 ## Go / no-go logic
 

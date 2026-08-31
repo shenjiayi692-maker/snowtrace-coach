@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from .contracts import CameraMode, EdgeType, QualityGateResult, VideoAnalysisResult, VideoRole
+from .contracts import CameraMode, EdgeType, QualityGateResult, Stance, VideoAnalysisResult, VideoRole
 from .metrics import compute_metric_series
 from .phases import detect_turns
 from .pose import extract_tracks, rider_candidates, selection_is_ambiguous
@@ -22,6 +22,7 @@ class AnalysisPipeline:
         *,
         role: VideoRole,
         camera_mode: CameraMode,
+        stance: Stance = "regular",
         first_edge: EdgeType = "unknown",
         selected_track_id: int | None = None,
     ) -> VideoAnalysisResult:
@@ -66,7 +67,7 @@ class AnalysisPipeline:
             stability_score=stability_score,
             camera_mode=camera_mode,
         )
-        metrics = compute_metric_series(selected) if quality.status != "rejected" else []
+        metrics = compute_metric_series(selected, stance) if quality.status != "rejected" else []
         return VideoAnalysisResult(
             role=role,
             camera_mode=camera_mode,

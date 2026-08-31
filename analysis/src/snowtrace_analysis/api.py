@@ -34,6 +34,8 @@ class PairAnalysisRequest(BaseModel):
     analysis_id: str = Field(min_length=8, max_length=120)
     reference: ClipRequest
     rider: ClipRequest
+    reference_stance: Literal["regular", "goofy"]
+    rider_stance: Literal["regular", "goofy"]
     camera_mode: Literal["fixed", "follow"] = "fixed"
     proxy_upload_urls: dict[Literal["reference", "rider"], str] | None = None
 
@@ -57,7 +59,7 @@ def _positive_int_env(name: str, default: int) -> int:
 def health() -> dict[str, str]:
     return {
         "status": "ok",
-        "pipeline_version": "video-intelligence-v0.3",
+        "pipeline_version": "video-intelligence-v0.4",
         "model": Path(_model_path()).name,
     }
 
@@ -71,7 +73,7 @@ def ready() -> dict[str, object]:
     }
     if not all(checks.values()):
         raise HTTPException(503, detail={"status": "not_ready", "checks": checks})
-    return {"status": "ready", "checks": checks, "pipeline_version": "video-intelligence-v0.3"}
+    return {"status": "ready", "checks": checks, "pipeline_version": "video-intelligence-v0.4"}
 
 
 @app.post("/v1/analyze-pair")
@@ -114,6 +116,7 @@ def _run_pair_analysis(request: PairAnalysisRequest) -> dict[str, object]:
             reference_source,
             role="reference",
             camera_mode=request.camera_mode,
+            stance=request.reference_stance,
             first_edge=request.reference.first_edge,
             selected_track_id=request.reference.selected_track_id,
         )
@@ -121,6 +124,7 @@ def _run_pair_analysis(request: PairAnalysisRequest) -> dict[str, object]:
             rider_source,
             role="rider",
             camera_mode=request.camera_mode,
+            stance=request.rider_stance,
             first_edge=request.rider.first_edge,
             selected_track_id=request.rider.selected_track_id,
         )

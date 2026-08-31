@@ -63,6 +63,8 @@ test("renders capture guidance and context controls", async () => {
   assert.match(html, /Short turns/);
   assert.match(html, /Dynamic carving/);
   assert.match(html, /Follow cam/);
+  assert.match(html, /Your stance/);
+  assert.match(html, /Reference stance/);
   assert.match(html, /Regular/);
   assert.match(html, /Goofy/);
 });
@@ -113,6 +115,7 @@ test("does not create a valid session while the analysis worker is offline", asy
       cameraMode: "fixed",
       viewAngle: "three-quarter",
       stance: "regular",
+      referenceStance: "regular",
       videos,
     }),
   }));

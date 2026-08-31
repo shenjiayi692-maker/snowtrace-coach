@@ -30,6 +30,9 @@ analysis service.
   independent gates; blocked blur or stability limits metric availability
 - Turn segmentation, phase normalization, confidence-aware metric comparison,
   and strict evidence thresholds
+- Separate rider and reference stance snapshots so lead/trail knee labels and
+  the normalized fore/aft axis remain anatomical for both regular and goofy
+  riders instead of silently treating left as lead
 - Evidence-frame pose snapshots rendered as synchronized skeleton overlays in
   the Show Me comparison; whole-video landmark streams are not sent to the web
 - D1 schema for sessions, videos, tracks, turns, metrics, evidence, reports,
@@ -40,7 +43,8 @@ analysis service.
   metrics remain correct after video expiry and do not count no-evidence runs
   as completed reports
 - Anonymous, D1-backed visible-gap history that compares sessions only when the
-  reference fingerprint, goal, camera context, metric, phase, and unit match;
+  reference fingerprint, goal, camera context, both stances, metric, phase, and
+  unit match;
   it is explicitly not presented as a riding score
 
 The MVP is snowboard carving only. It does not claim force, pressure, exact

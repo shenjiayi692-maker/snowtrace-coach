@@ -9,6 +9,7 @@ import numpy as np
 VideoRole = Literal["reference", "rider"]
 CameraMode = Literal["fixed", "follow"]
 EdgeType = Literal["heelside", "toeside", "unknown"]
+Stance = Literal["regular", "goofy"]
 QualityStatus = Literal["full", "limited", "rejected"]
 
 
@@ -117,7 +118,7 @@ class VideoAnalysisResult:
     metrics: list[MetricSeries]
     status: Literal["needs_rider", "rejected", "completed"]
     selected_track: RiderTrack | None = field(default=None, repr=False)
-    pipeline_version: str = "video-intelligence-v0.3"
+    pipeline_version: str = "video-intelligence-v0.4"
 
     def to_dict(self) -> dict[str, Any]:
         return {

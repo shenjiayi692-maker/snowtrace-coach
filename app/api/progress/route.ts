@@ -7,6 +7,8 @@ type ProgressRow = {
   goal: "medium" | "short" | "dynamic";
   camera_mode: "fixed" | "follow";
   view_angle: "three-quarter" | "side" | "front-rear";
+  rider_stance: "regular" | "goofy";
+  reference_stance: "regular" | "goofy";
   recorded_at: string;
   metric_id: string;
   phase: "initiation" | "shaping" | "apex" | "completion";
@@ -35,6 +37,8 @@ export async function POST(request: Request) {
        progressions.goal,
        sessions.camera_mode,
        sessions.view_angle,
+       sessions.rider_stance,
+       sessions.reference_stance,
        sessions.created_at AS recorded_at,
        comparison_evidence.metric_id,
        comparison_evidence.phase,
@@ -70,6 +74,8 @@ export async function POST(request: Request) {
         goal: row.goal,
         cameraMode: row.camera_mode,
         viewAngle: row.view_angle,
+        riderStance: row.rider_stance,
+        referenceStance: row.reference_stance,
         recordedAt: row.recorded_at,
         metricId: row.metric_id,
         phase: row.phase,
@@ -91,6 +97,8 @@ export async function POST(request: Request) {
         candidate.goal === item.goal &&
         candidate.cameraMode === item.cameraMode &&
         candidate.viewAngle === item.viewAngle &&
+        candidate.riderStance === item.riderStance &&
+        candidate.referenceStance === item.referenceStance &&
         candidate.metricId === item.metricId &&
         candidate.phase === item.phase &&
         candidate.unit === item.unit)

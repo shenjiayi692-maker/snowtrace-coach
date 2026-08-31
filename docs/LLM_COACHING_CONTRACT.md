@@ -38,7 +38,8 @@ removed from the LLM input envelope.
   "schema_version": "coach-input-v1",
   "locale": "en",
   "goal": "medium",
-  "stance": "regular",
+  "rider_stance": "regular",
+  "reference_stance": "goofy",
   "camera_mode": "fixed",
   "view_angle": "three-quarter",
   "evidence": {

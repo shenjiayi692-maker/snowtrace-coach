@@ -32,6 +32,8 @@ export const sessions = sqliteTable("sessions", {
   slopeContext: text("slope_context"),
   cameraMode: text("camera_mode", { enum: ["fixed", "follow"] }).notNull(),
   viewAngle: text("view_angle", { enum: ["three-quarter", "side", "front-rear"] }).notNull(),
+  riderStance: text("rider_stance", { enum: ["regular", "goofy"] }).notNull().default("regular"),
+  referenceStance: text("reference_stance", { enum: ["regular", "goofy"] }).notNull().default("regular"),
   status: text("status", { enum: ["draft", "processing", "completed", "failed"] }).notNull().default("draft"),
   ...timestamps,
 }, (table) => [index("sessions_progression_idx").on(table.progressionId)]);
