@@ -35,6 +35,8 @@ def compare_videos(reference: VideoAnalysisResult, rider: VideoAnalysisResult) -
         raise ComparisonError("Quality results are required.")
     if reference.quality.status == "rejected" or rider.quality.status == "rejected":
         raise ComparisonError("Rejected videos cannot be compared.")
+    if reference.view_angle != rider.view_angle:
+        raise ComparisonError("Reference and rider clips must use the same declared view.")
 
     allowed = set(reference.quality.allowed_metrics) & set(rider.quality.allowed_metrics)
     reference_metrics = {metric.metric_id: metric for metric in reference.metrics}

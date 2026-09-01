@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import numpy as np
 
-from .contracts import QualityCheck, QualityGateResult, RiderTrack, Turn
+from .contracts import QualityCheck, QualityGateResult, RiderTrack, Turn, ViewAngle
 
 FULL_METRICS = [
     "knee_flexion_lead",
@@ -16,6 +16,36 @@ FULL_METRICS = [
     "turn_consistency",
 ]
 
+LIMITED_METRICS = [
+    "knee_flexion_lead",
+    "knee_flexion_trail",
+    "pelvis_height",
+    "upper_lower_separation",
+    "lead_trail_differential",
+    "turn_timing",
+]
+
+VIEW_METRICS = {
+    "three-quarter": set(FULL_METRICS),
+    "side": {
+        "knee_flexion_lead",
+        "knee_flexion_trail",
+        "pelvis_height",
+        "projected_inclination",
+        "fore_aft_pelvis",
+        "lead_trail_differential",
+        "turn_timing",
+        "turn_consistency",
+    },
+    "front-rear": {
+        "pelvis_height",
+        "projected_inclination",
+        "upper_lower_separation",
+        "turn_timing",
+        "turn_consistency",
+    },
+}
+
 
 def build_quality_gate(
     track: RiderTrack,
@@ -25,6 +55,7 @@ def build_quality_gate(
     exposure_score: float,
     stability_score: float,
     camera_mode: str,
+    view_angle: ViewAngle,
 ) -> QualityGateResult:
     observations = track.observations
     segment_frames = _active_segment_frames(track)
@@ -68,13 +99,10 @@ def build_quality_gate(
         allowed: list[str] = []
     elif readiness < 75 or camera_mode == "follow" or limited_by_capture:
         status = "limited"
-        allowed = [
-            "knee_flexion_lead", "knee_flexion_trail", "pelvis_height",
-            "upper_lower_separation", "lead_trail_differential", "turn_timing",
-        ]
+        allowed = [metric for metric in LIMITED_METRICS if metric in VIEW_METRICS[view_angle]]
     else:
         status = "full"
-        allowed = FULL_METRICS.copy()
+        allowed = [metric for metric in FULL_METRICS if metric in VIEW_METRICS[view_angle]]
     return QualityGateResult(status, readiness, failures, checks, allowed, instructions)
 
 

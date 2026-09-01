@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from .contracts import CameraMode, EdgeType, QualityGateResult, Stance, VideoAnalysisResult, VideoRole
+from .contracts import CameraMode, EdgeType, QualityGateResult, Stance, VideoAnalysisResult, VideoRole, ViewAngle
 from .metrics import compute_metric_series
 from .phases import detect_turns
 from .pose import extract_tracks, rider_candidates, selection_is_ambiguous
@@ -23,6 +23,7 @@ class AnalysisPipeline:
         role: VideoRole,
         camera_mode: CameraMode,
         stance: Stance = "regular",
+        view_angle: ViewAngle = "three-quarter",
         first_edge: EdgeType = "unknown",
         selected_track_id: int | None = None,
     ) -> VideoAnalysisResult:
@@ -45,10 +46,10 @@ class AnalysisPipeline:
                     "Use a stable fixed camera and avoid strong backlight or heavy motion blur.",
                 ],
             )
-            return VideoAnalysisResult(role, camera_mode, metadata, proxy_path, None, [], None, None, [], quality, [], "rejected")
+            return VideoAnalysisResult(role, camera_mode, view_angle, metadata, proxy_path, None, [], None, None, [], quality, [], "rejected")
 
         if selected_track_id is None and selection_is_ambiguous(tracks):
-            return VideoAnalysisResult(role, camera_mode, metadata, proxy_path, None, candidates, None, None, [], None, [], "needs_rider")
+            return VideoAnalysisResult(role, camera_mode, view_angle, metadata, proxy_path, None, candidates, None, None, [], None, [], "needs_rider")
 
         if selected_track_id is None:
             selected = tracks[0]
@@ -66,11 +67,13 @@ class AnalysisPipeline:
             exposure_score=exposure_score,
             stability_score=stability_score,
             camera_mode=camera_mode,
+            view_angle=view_angle,
         )
         metrics = compute_metric_series(selected, stance) if quality.status != "rejected" else []
         return VideoAnalysisResult(
             role=role,
             camera_mode=camera_mode,
+            view_angle=view_angle,
             metadata=metadata,
             proxy_path=proxy_path,
             selected_track_id=selected.track_id,

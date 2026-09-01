@@ -9,6 +9,8 @@ type SessionRow = {
   status: string;
   camera_mode: string;
   view_angle: string;
+  reference_camera_mode: string;
+  reference_view_angle: string;
   created_at: string;
   updated_at: string;
 };
@@ -147,7 +149,8 @@ function riderSelectionAction(output: OutputRow | null) {
 export async function GET(_request: Request, context: { params: Promise<{ sessionId: string }> }) {
   const { sessionId } = await context.params;
   const session = await env.DB.prepare(
-    "SELECT id, progression_id, status, camera_mode, view_angle, created_at, updated_at FROM sessions WHERE id = ?",
+    `SELECT id, progression_id, status, camera_mode, view_angle, reference_camera_mode, reference_view_angle, created_at, updated_at
+     FROM sessions WHERE id = ?`,
   ).bind(sessionId).first<SessionRow>();
   if (!session) return jsonError("The analysis session was not found.", 404);
 

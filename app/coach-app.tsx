@@ -611,6 +611,8 @@ export function CoachApp() {
   const [goal, setGoal] = useState<Goal>("medium");
   const [camera, setCamera] = useState("fixed");
   const [view, setView] = useState("three-quarter");
+  const [referenceCamera, setReferenceCamera] = useState("fixed");
+  const [referenceView, setReferenceView] = useState("three-quarter");
   const [stance, setStance] = useState("regular");
   const [referenceStance, setReferenceStance] = useState("regular");
   const [adultAndRightsConfirmed, setAdultAndRightsConfirmed] = useState(false);
@@ -829,10 +831,25 @@ export function CoachApp() {
   }, [reference, rider]);
 
   const videos = useMemo(() => [reference, rider].filter(Boolean) as VideoInspection[], [reference, rider]);
-  const readiness = useMemo(() => preliminaryReadiness(videos), [videos]);
+  const viewsCompatible = view === referenceView;
+  const readiness = useMemo(() => {
+    const footageReadiness = preliminaryReadiness(videos);
+    return viewsCompatible ? footageReadiness : Math.min(49, footageReadiness);
+  }, [videos, viewsCompatible]);
   const allChecks = useMemo(
-    () => videos.flatMap((video) => buildPreflightChecks(video).map((check) => ({ ...check, role: video.role }))),
-    [videos],
+    () => [
+      ...videos.flatMap((video) => buildPreflightChecks(video).map((check) => ({ ...check, role: video.role as VideoRole | "pair" }))),
+      {
+        id: "reference-compatibility",
+        label: "Reference compatibility",
+        value: viewsCompatible ? "Matched" : "Blocked",
+        score: viewsCompatible ? 100 : 0,
+        state: viewsCompatible ? "good" as const : "blocked" as const,
+        note: viewsCompatible ? `Both clips use the ${view} view` : "Choose the same view type for both clips",
+        role: "pair" as const,
+      },
+    ],
+    [videos, view, viewsCompatible],
   );
   const canContinue = Boolean(
     reference &&
@@ -883,6 +900,7 @@ export function CoachApp() {
       !rider ||
       !referenceFile ||
       !riderFile ||
+      !viewsCompatible ||
       !adultAndRightsConfirmed ||
       !retentionAcknowledged
     ) return;
@@ -911,7 +929,9 @@ export function CoachApp() {
           },
           goal,
           cameraMode: camera,
+          referenceCameraMode: referenceCamera,
           viewAngle: view,
+          referenceViewAngle: referenceView,
           stance,
           referenceStance,
           videos: [
@@ -1144,6 +1164,7 @@ export function CoachApp() {
                 <h2>Three turns. Full body. One stable view.</h2>
                 <ul>
                   <li>Fixed 3/4 camera angle is best</li>
+                  <li>Reference and rider clips need the same view type</li>
                   <li>Keep the rider at least 20% of frame height</li>
                   <li>Avoid digital zoom and hard backlight</li>
                 </ul>
@@ -1190,13 +1211,13 @@ export function CoachApp() {
 
             <div className="context-row">
               <ContextSelector
-                label="Camera"
+                label="Your camera"
                 value={camera}
                 onChange={setCamera}
                 options={[{ value: "fixed", label: "Fixed" }, { value: "follow", label: "Follow cam" }]}
               />
               <ContextSelector
-                label="View"
+                label="Your view"
                 value={view}
                 onChange={setView}
                 options={[
@@ -1210,6 +1231,22 @@ export function CoachApp() {
                 value={stance}
                 onChange={setStance}
                 options={[{ value: "regular", label: "Regular" }, { value: "goofy", label: "Goofy" }]}
+              />
+              <ContextSelector
+                label="Reference camera"
+                value={referenceCamera}
+                onChange={setReferenceCamera}
+                options={[{ value: "fixed", label: "Fixed" }, { value: "follow", label: "Follow cam" }]}
+              />
+              <ContextSelector
+                label="Reference view"
+                value={referenceView}
+                onChange={setReferenceView}
+                options={[
+                  { value: "three-quarter", label: "3/4 view" },
+                  { value: "side", label: "Side" },
+                  { value: "front-rear", label: "Front / rear" },
+                ]}
               />
               <ContextSelector
                 label="Reference stance"
@@ -1271,7 +1308,7 @@ export function CoachApp() {
             ) : (
               <p className="progress-empty">Your first accepted comparison will become the baseline for a future like-for-like run.</p>
             )}
-            <small>Same reference, goal, camera mode, view, both stances, metric and turn phase required. Filming differences can still affect 2D pose.</small>
+            <small>Same reference, goal, both camera modes, shared view, both stances, metric and turn phase required. Filming differences can still affect 2D pose.</small>
           </section>
         </div>
       )}
@@ -1314,7 +1351,7 @@ export function CoachApp() {
                     <StatusDot state={check.state} />
                     <div>
                       <strong>{check.label}</strong>
-                      <span>{check.role === "reference" ? "Reference" : "Your ride"} · {check.note}</span>
+                      <span>{check.role === "reference" ? "Reference" : check.role === "rider" ? "Your ride" : "Both clips"} · {check.note}</span>
                     </div>
                     <b>{check.value}</b>
                   </div>
@@ -1342,9 +1379,10 @@ export function CoachApp() {
           </div>
 
           <div className="readiness-actions">
-            <button type="button" className="primary-button centered-button" disabled={serviceAvailability !== "available"} onClick={startLiveAnalysis}>
+            <button type="button" className="primary-button centered-button" disabled={serviceAvailability !== "available" || !viewsCompatible} onClick={startLiveAnalysis}>
               Upload &amp; queue pose gate <span aria-hidden="true">→</span>
             </button>
+            {!viewsCompatible && <p className="service-inline-message">Choose the same declared view for the reference and rider clips before uploading.</p>}
             {serviceAvailability !== "available" && <p className="service-inline-message">Upload is paused until the analysis worker passes its readiness check.</p>}
           </div>
         </div>

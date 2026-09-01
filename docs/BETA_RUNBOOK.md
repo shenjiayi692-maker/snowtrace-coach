@@ -16,8 +16,8 @@ a groomed blue run:
 
 - 12 intermediate riders and 8 advanced riders;
 - at least 5 regular and 5 goofy riders;
-- at least 5 follow-camera clips, with the rest using the recommended fixed 3/4
-  view;
+- at least 5 pairs containing a follow-camera clip, with the rest using the
+  recommended fixed 3/4 setup;
 - a mixture of portrait and landscape phone footage;
 - no minors in the first beta.
 
@@ -35,8 +35,9 @@ group.
 ## Rider protocol
 
 1. Rider selects one reference clip and one recent clip of their own.
-2. Rider records goal, their own stance, the reference rider's stance, camera
-   mode, and view. Do not assume the reference uses the rider's stance.
+2. Rider records goal, each rider's stance, and each clip's camera mode and
+   view. Do not assume the reference uses the user's stance or camera mode. The
+   beta requires both clips to use the same declared view category.
 3. Snowtrace runs browser preflight, upload, pose quality, rider selection when
    necessary, turn alignment, and confidence filtering.
 4. If accepted, rider opens Show Me before reading the possible explanation.
@@ -44,7 +45,7 @@ group.
    after scrubbing away from that moment.
 5. Rider reads one drill and submits the three in-product feedback answers.
 6. Within 3–7 days, invite the rider to film the same goal again after trying
-   the drill. Ask them to reuse the same reference clip and camera context when
+   the drill. Ask them to reuse the same reference clip and both camera contexts when
    they want a visible-gap comparison. Record whether they upload a second
    complete pair; do not count verbal intent as retention.
 7. Conduct a 15-minute interview after the product task.
@@ -104,8 +105,9 @@ completed run can legitimately contain no reliable evidence and no report.
 
 The upload page shows at most three recent evidence-backed gaps for the
 anonymous device identity. It computes a directional gap change only when the
-reference file fingerprint, goal, camera mode, view, rider stance, reference
-stance, metric, phase, and unit all match a prior record. Label this as movement relative to one reference, never
+reference file fingerprint, goal, both camera modes, both views, rider stance,
+reference stance, metric, phase, and unit all match a prior record. Label this
+as movement relative to one reference, never
 as skill, certification level, or proof that technique improved. A different
 reference or filming context starts a new baseline.
 
@@ -167,6 +169,13 @@ For stance audits, confirm regular maps the left leg to lead and goofy maps the
 right leg to lead for both videos independently. The signed fore/aft proxy is
 positive toward the selected anatomical lead foot. Never infer the reference
 stance from the user's stance.
+
+For reference-compatibility audits, the browser and server must block a pair
+whose declared views differ before either source is uploaded. Fixed/follow
+camera modes may differ, but each clip keeps its own mode and the resulting
+metric set is the intersection of both quality gates. Front/rear footage must
+not emit sagittal knee or fore/aft evidence; side footage must not emit the
+foreshortened shoulder/pelvis separation metric.
 
 ## Go / no-go logic
 

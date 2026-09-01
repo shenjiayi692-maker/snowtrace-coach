@@ -12,7 +12,7 @@ from urllib.parse import urlparse
 
 import httpx
 from fastapi import BackgroundTasks, FastAPI, Header, HTTPException
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 from .comparison import ComparisonError, compare_videos
 from .pipeline import AnalysisPipeline
@@ -36,8 +36,17 @@ class PairAnalysisRequest(BaseModel):
     rider: ClipRequest
     reference_stance: Literal["regular", "goofy"]
     rider_stance: Literal["regular", "goofy"]
-    camera_mode: Literal["fixed", "follow"] = "fixed"
+    reference_camera_mode: Literal["fixed", "follow"]
+    rider_camera_mode: Literal["fixed", "follow"]
+    reference_view_angle: Literal["three-quarter", "side", "front-rear"]
+    rider_view_angle: Literal["three-quarter", "side", "front-rear"]
     proxy_upload_urls: dict[Literal["reference", "rider"], str] | None = None
+
+    @model_validator(mode="after")
+    def views_must_match(self) -> "PairAnalysisRequest":
+        if self.reference_view_angle != self.rider_view_angle:
+            raise ValueError("Reference and rider clips must use the same declared view for this 2D beta.")
+        return self
 
 
 class PairAnalysisJobRequest(PairAnalysisRequest):
@@ -59,7 +68,7 @@ def _positive_int_env(name: str, default: int) -> int:
 def health() -> dict[str, str]:
     return {
         "status": "ok",
-        "pipeline_version": "video-intelligence-v0.4",
+        "pipeline_version": "video-intelligence-v0.5",
         "model": Path(_model_path()).name,
     }
 
@@ -73,7 +82,7 @@ def ready() -> dict[str, object]:
     }
     if not all(checks.values()):
         raise HTTPException(503, detail={"status": "not_ready", "checks": checks})
-    return {"status": "ready", "checks": checks, "pipeline_version": "video-intelligence-v0.4"}
+    return {"status": "ready", "checks": checks, "pipeline_version": "video-intelligence-v0.5"}
 
 
 @app.post("/v1/analyze-pair")
@@ -115,16 +124,18 @@ def _run_pair_analysis(request: PairAnalysisRequest) -> dict[str, object]:
         reference = pipeline.analyze_video(
             reference_source,
             role="reference",
-            camera_mode=request.camera_mode,
+            camera_mode=request.reference_camera_mode,
             stance=request.reference_stance,
+            view_angle=request.reference_view_angle,
             first_edge=request.reference.first_edge,
             selected_track_id=request.reference.selected_track_id,
         )
         rider = pipeline.analyze_video(
             rider_source,
             role="rider",
-            camera_mode=request.camera_mode,
+            camera_mode=request.rider_camera_mode,
             stance=request.rider_stance,
+            view_angle=request.rider_view_angle,
             first_edge=request.rider.first_edge,
             selected_track_id=request.rider.selected_track_id,
         )

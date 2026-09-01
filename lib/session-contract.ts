@@ -32,7 +32,9 @@ export type CreateSessionInput = {
   };
   goal: "medium" | "short" | "dynamic";
   cameraMode: "fixed" | "follow";
+  referenceCameraMode: "fixed" | "follow";
   viewAngle: "three-quarter" | "side" | "front-rear";
+  referenceViewAngle: "three-quarter" | "side" | "front-rear";
   stance: "regular" | "goofy";
   referenceStance: "regular" | "goofy";
   videos: SessionVideoInput[];
@@ -106,7 +108,16 @@ export function parseCreateSessionInput(input: unknown): ParseResult {
   }
   if (typeof value.goal !== "string" || !goals.has(value.goal)) return { ok: false, error: "Choose a supported carving goal." };
   if (typeof value.cameraMode !== "string" || !cameras.has(value.cameraMode)) return { ok: false, error: "Choose a supported camera mode." };
+  if (typeof value.referenceCameraMode !== "string" || !cameras.has(value.referenceCameraMode)) {
+    return { ok: false, error: "Choose the reference camera mode." };
+  }
   if (typeof value.viewAngle !== "string" || !views.has(value.viewAngle)) return { ok: false, error: "Choose a supported view angle." };
+  if (typeof value.referenceViewAngle !== "string" || !views.has(value.referenceViewAngle)) {
+    return { ok: false, error: "Choose the reference view angle." };
+  }
+  if (value.viewAngle !== value.referenceViewAngle) {
+    return { ok: false, error: "Reference and rider clips must use the same declared view for this 2D beta." };
+  }
   if (typeof value.stance !== "string" || !stances.has(value.stance)) return { ok: false, error: "Choose regular or goofy stance." };
   if (typeof value.referenceStance !== "string" || !stances.has(value.referenceStance)) {
     return { ok: false, error: "Choose the reference rider's stance." };
@@ -131,7 +142,9 @@ export function parseCreateSessionInput(input: unknown): ParseResult {
       },
       goal: value.goal as CreateSessionInput["goal"],
       cameraMode: value.cameraMode as CreateSessionInput["cameraMode"],
+      referenceCameraMode: value.referenceCameraMode as CreateSessionInput["referenceCameraMode"],
       viewAngle: value.viewAngle as CreateSessionInput["viewAngle"],
+      referenceViewAngle: value.referenceViewAngle as CreateSessionInput["referenceViewAngle"],
       stance: value.stance as CreateSessionInput["stance"],
       referenceStance: value.referenceStance as CreateSessionInput["referenceStance"],
       videos: parsedVideos,

@@ -159,7 +159,9 @@ test("creates, uploads, queues, reads and deletes a real analysis session", asyn
       },
       goal: "medium",
       cameraMode: "fixed",
+      referenceCameraMode: "follow",
       viewAngle: "three-quarter",
+      referenceViewAngle: "three-quarter",
       stance: "regular",
       referenceStance: "goofy",
       videos: [
@@ -196,9 +198,15 @@ test("creates, uploads, queues, reads and deletes a real analysis session", asyn
     database.prepare("SELECT consent_version FROM profiles WHERE anonymous_id = ?").get("rider_1234567890abcdef").consent_version,
     "beta-consent-v1",
   );
-  const storedStances = database.prepare("SELECT rider_stance, reference_stance FROM sessions WHERE id = ?").get(created.sessionId);
+  const storedStances = database.prepare(
+    "SELECT rider_stance, reference_stance, camera_mode, view_angle, reference_camera_mode, reference_view_angle FROM sessions WHERE id = ?",
+  ).get(created.sessionId);
   assert.equal(storedStances.rider_stance, "regular");
   assert.equal(storedStances.reference_stance, "goofy");
+  assert.equal(storedStances.camera_mode, "fixed");
+  assert.equal(storedStances.view_angle, "three-quarter");
+  assert.equal(storedStances.reference_camera_mode, "follow");
+  assert.equal(storedStances.reference_view_angle, "three-quarter");
 
   for (const video of created.videos) {
     const bytes = sourceBytes[video.role];
@@ -239,6 +247,10 @@ test("creates, uploads, queues, reads and deletes a real analysis session", asyn
   assert.equal(queued.status, "queued");
   assert.equal(analysisRequests.at(-1).rider_stance, "regular");
   assert.equal(analysisRequests.at(-1).reference_stance, "goofy");
+  assert.equal(analysisRequests.at(-1).rider_camera_mode, "fixed");
+  assert.equal(analysisRequests.at(-1).reference_camera_mode, "follow");
+  assert.equal(analysisRequests.at(-1).rider_view_angle, "three-quarter");
+  assert.equal(analysisRequests.at(-1).reference_view_angle, "three-quarter");
 
   const expires = Math.floor(Date.now() / 1000) + 60;
   const referenceVideo = created.videos.find((video) => video.role === "reference");
@@ -546,6 +558,7 @@ test("computes a visible-gap trend only for matching reference and capture conte
     { index: 0, date: "2026-01-01T12:00:00.000Z", fingerprint: "c".repeat(64), difference: 20 },
     { index: 1, date: "2026-01-02T12:00:00.000Z", fingerprint: "c".repeat(64), difference: 5 },
     { index: 2, date: "2026-01-03T12:00:00.000Z", fingerprint: "c".repeat(64), difference: 12 },
+    { index: 3, date: "2026-01-04T12:00:00.000Z", fingerprint: "c".repeat(64), difference: 9 },
   ];
   database.prepare(
     "INSERT INTO profiles (id, anonymous_id, locale, stance, level, consent_version, created_at, updated_at) VALUES (?, ?, 'en', 'regular', 'intermediate', 'beta-consent-v1', ?, ?)",
@@ -561,8 +574,18 @@ test("computes a visible-gap trend only for matching reference and capture conte
        VALUES (?, ?, 'medium', 'none', ?, 'active', ?, ?)`,
     ).run(progressionId, "pro_progress", videoId, record.date, record.date);
     database.prepare(
-      "INSERT INTO sessions (id, progression_id, camera_mode, view_angle, rider_stance, reference_stance, status, created_at, updated_at) VALUES (?, ?, 'fixed', 'three-quarter', ?, ?, 'completed', ?, ?)",
-    ).run(sessionId, progressionId, record.index === 1 ? "goofy" : "regular", record.index === 1 ? "goofy" : "regular", record.date, record.date);
+      `INSERT INTO sessions
+        (id, progression_id, camera_mode, view_angle, reference_camera_mode, reference_view_angle, rider_stance, reference_stance, status, created_at, updated_at)
+       VALUES (?, ?, 'fixed', 'three-quarter', ?, 'three-quarter', ?, ?, 'completed', ?, ?)`,
+    ).run(
+      sessionId,
+      progressionId,
+      record.index === 3 ? "follow" : "fixed",
+      record.index === 1 ? "goofy" : "regular",
+      record.index === 1 ? "goofy" : "regular",
+      record.date,
+      record.date,
+    );
     database.prepare(
       `INSERT INTO videos
         (id, session_id, role, object_key, original_name, content_type, size_bytes, metadata_json, expires_at, created_at, updated_at)
@@ -593,15 +616,19 @@ test("computes a visible-gap trend only for matching reference and capture conte
   });
   assert.equal(response.status, 200);
   const progress = await response.json();
-  assert.equal(progress.history.length, 3);
-  assert.equal(progress.history[0].difference, 12);
-  assert.equal(progress.history[0].gapChange, 8);
-  assert.equal(progress.history[1].difference, 5);
-  assert.equal(progress.history[1].gapChange, null);
+  assert.equal(progress.history.length, 4);
+  assert.equal(progress.history[0].difference, 9);
+  assert.equal(progress.history[0].gapChange, null);
+  assert.equal(progress.history[1].difference, 12);
+  assert.equal(progress.history[1].gapChange, 8);
+  assert.equal(progress.history[2].difference, 5);
   assert.equal(progress.history[2].gapChange, null);
+  assert.equal(progress.history[3].gapChange, null);
   assert.equal("referenceFingerprint" in progress.history[0], false);
   assert.equal("riderStance" in progress.history[0], false);
   assert.equal("referenceStance" in progress.history[0], false);
+  assert.equal("referenceCameraMode" in progress.history[0], false);
+  assert.equal("referenceViewAngle" in progress.history[0], false);
 
   database.prepare("DELETE FROM profiles WHERE id = ?").run("pro_progress");
 });
@@ -613,7 +640,7 @@ test("reports worker availability without exposing runtime secrets", async () =>
   assert.deepEqual(status, {
     analysisAvailable: true,
     productScope: "snowboard_carving",
-    pipelineVersion: "video-intelligence-v0.4",
+    pipelineVersion: "video-intelligence-v0.5",
   });
   assert.equal(JSON.stringify(status).includes("callback-test-token"), false);
 
@@ -629,7 +656,9 @@ test("requires the current video consent before creating a session", async () =>
       anonymousId: "rider_missing_consent_1234",
       goal: "medium",
       cameraMode: "fixed",
+      referenceCameraMode: "fixed",
       viewAngle: "three-quarter",
+      referenceViewAngle: "three-quarter",
       stance: "regular",
       referenceStance: "regular",
       videos: [],

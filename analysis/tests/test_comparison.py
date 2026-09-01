@@ -3,7 +3,7 @@ from pathlib import Path
 
 import numpy as np
 
-from snowtrace_analysis.comparison import compare_videos
+from snowtrace_analysis.comparison import ComparisonError, compare_videos
 from snowtrace_analysis.contracts import (
     MetricSeries,
     PoseObservation,
@@ -15,7 +15,7 @@ from snowtrace_analysis.contracts import (
 )
 
 
-def result(role: str, knee_offset: float) -> VideoAnalysisResult:
+def result(role: str, knee_offset: float, view_angle: str = "three-quarter") -> VideoAnalysisResult:
     turns = [
         Turn(0, "heelside", 0, 500, 1000, 0.95),
         Turn(1, "toeside", 1000, 1500, 2000, 0.95),
@@ -40,6 +40,7 @@ def result(role: str, knee_offset: float) -> VideoAnalysisResult:
     return VideoAnalysisResult(
         role=role,
         camera_mode="fixed",
+        view_angle=view_angle,
         metadata=metadata,
         proxy_path=Path("proxy.mp4"),
         selected_track_id=0,
@@ -70,6 +71,10 @@ class ComparisonTests(unittest.TestCase):
     def test_ignores_subthreshold_difference(self):
         evidence = compare_videos(result("reference", 0), result("rider", 4))
         self.assertEqual(evidence, [])
+
+    def test_rejects_different_declared_views(self):
+        with self.assertRaisesRegex(ComparisonError, "same declared view"):
+            compare_videos(result("reference", 0, "side"), result("rider", 12, "three-quarter"))
 
 
 if __name__ == "__main__":

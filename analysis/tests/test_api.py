@@ -13,7 +13,7 @@ class ApiTests(unittest.TestCase):
         response = TestClient(app).get("/health")
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json()["status"], "ok")
-        self.assertEqual(response.json()["pipeline_version"], "video-intelligence-v0.4")
+        self.assertEqual(response.json()["pipeline_version"], "video-intelligence-v0.5")
 
     def test_ready_checks_runtime_dependencies(self):
         with patch("snowtrace_analysis.api.shutil.which", return_value="/usr/bin/tool"):
@@ -26,7 +26,10 @@ class ApiTests(unittest.TestCase):
             "/v1/analyze-pair",
             json={
                 "analysis_id": "analysis-test-001",
-                "camera_mode": "fixed",
+                "reference_camera_mode": "follow",
+                "rider_camera_mode": "fixed",
+                "reference_view_angle": "three-quarter",
+                "rider_view_angle": "three-quarter",
                 "reference_stance": "regular",
                 "rider_stance": "goofy",
                 "reference": {"source_url": "http://example.com/reference.mp4"},
@@ -36,10 +39,13 @@ class ApiTests(unittest.TestCase):
         self.assertEqual(response.status_code, 400)
         self.assertEqual(response.json()["detail"], "Source URLs must use HTTPS.")
 
-    def test_pair_analysis_preserves_reference_and_rider_stances(self):
+    def test_pair_analysis_preserves_each_video_context(self):
         request = api.PairAnalysisRequest(
             analysis_id="analysis-stance-contract",
-            camera_mode="fixed",
+            reference_camera_mode="follow",
+            rider_camera_mode="fixed",
+            reference_view_angle="side",
+            rider_view_angle="side",
             reference_stance="goofy",
             rider_stance="regular",
             reference={"source_url": "https://example.com/reference.mp4"},
@@ -61,11 +67,36 @@ class ApiTests(unittest.TestCase):
         self.assertEqual(result["status"], "needs_rider")
         self.assertEqual(pipeline.analyze_video.call_args_list[0].kwargs["stance"], "goofy")
         self.assertEqual(pipeline.analyze_video.call_args_list[1].kwargs["stance"], "regular")
+        self.assertEqual(pipeline.analyze_video.call_args_list[0].kwargs["camera_mode"], "follow")
+        self.assertEqual(pipeline.analyze_video.call_args_list[1].kwargs["camera_mode"], "fixed")
+        self.assertEqual(pipeline.analyze_video.call_args_list[0].kwargs["view_angle"], "side")
+        self.assertEqual(pipeline.analyze_video.call_args_list[1].kwargs["view_angle"], "side")
+
+    def test_pair_contract_rejects_mismatched_views_before_analysis(self):
+        response = TestClient(app).post(
+            "/v1/analyze-pair",
+            json={
+                "analysis_id": "analysis-view-mismatch",
+                "reference_camera_mode": "fixed",
+                "rider_camera_mode": "fixed",
+                "reference_view_angle": "side",
+                "rider_view_angle": "three-quarter",
+                "reference_stance": "regular",
+                "rider_stance": "regular",
+                "reference": {"source_url": "https://example.com/reference.mp4"},
+                "rider": {"source_url": "https://example.com/rider.mp4"},
+            },
+        )
+        self.assertEqual(response.status_code, 422)
+        self.assertIn("same declared view", response.text)
 
     def test_job_endpoint_requires_service_token(self):
         payload = {
             "analysis_id": "analysis-job-001",
-            "camera_mode": "fixed",
+            "reference_camera_mode": "follow",
+            "rider_camera_mode": "fixed",
+            "reference_view_angle": "three-quarter",
+            "rider_view_angle": "three-quarter",
             "reference_stance": "regular",
             "rider_stance": "goofy",
             "reference": {"source_url": "https://example.com/reference.mp4"},
@@ -80,7 +111,10 @@ class ApiTests(unittest.TestCase):
     def test_job_endpoint_rejects_insecure_callback(self):
         payload = {
             "analysis_id": "analysis-job-002",
-            "camera_mode": "fixed",
+            "reference_camera_mode": "follow",
+            "rider_camera_mode": "fixed",
+            "reference_view_angle": "three-quarter",
+            "rider_view_angle": "three-quarter",
             "reference_stance": "regular",
             "rider_stance": "goofy",
             "reference": {"source_url": "https://example.com/reference.mp4"},
@@ -99,7 +133,10 @@ class ApiTests(unittest.TestCase):
     def test_job_endpoint_limits_active_work(self):
         payload = {
             "analysis_id": "analysis-job-capacity",
-            "camera_mode": "fixed",
+            "reference_camera_mode": "follow",
+            "rider_camera_mode": "fixed",
+            "reference_view_angle": "three-quarter",
+            "rider_view_angle": "three-quarter",
             "reference_stance": "regular",
             "rider_stance": "goofy",
             "reference": {"source_url": "https://example.com/reference.mp4"},

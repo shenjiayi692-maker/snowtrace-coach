@@ -7,6 +7,8 @@ type ProgressRow = {
   goal: "medium" | "short" | "dynamic";
   camera_mode: "fixed" | "follow";
   view_angle: "three-quarter" | "side" | "front-rear";
+  reference_camera_mode: "fixed" | "follow";
+  reference_view_angle: "three-quarter" | "side" | "front-rear";
   rider_stance: "regular" | "goofy";
   reference_stance: "regular" | "goofy";
   recorded_at: string;
@@ -37,6 +39,8 @@ export async function POST(request: Request) {
        progressions.goal,
        sessions.camera_mode,
        sessions.view_angle,
+       sessions.reference_camera_mode,
+       sessions.reference_view_angle,
        sessions.rider_stance,
        sessions.reference_stance,
        sessions.created_at AS recorded_at,
@@ -74,6 +78,8 @@ export async function POST(request: Request) {
         goal: row.goal,
         cameraMode: row.camera_mode,
         viewAngle: row.view_angle,
+        referenceCameraMode: row.reference_camera_mode,
+        referenceViewAngle: row.reference_view_angle,
         riderStance: row.rider_stance,
         referenceStance: row.reference_stance,
         recordedAt: row.recorded_at,
@@ -97,6 +103,8 @@ export async function POST(request: Request) {
         candidate.goal === item.goal &&
         candidate.cameraMode === item.cameraMode &&
         candidate.viewAngle === item.viewAngle &&
+        candidate.referenceCameraMode === item.referenceCameraMode &&
+        candidate.referenceViewAngle === item.referenceViewAngle &&
         candidate.riderStance === item.riderStance &&
         candidate.referenceStance === item.referenceStance &&
         candidate.metricId === item.metricId &&

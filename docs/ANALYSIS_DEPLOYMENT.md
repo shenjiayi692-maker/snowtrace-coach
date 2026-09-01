@@ -60,6 +60,9 @@ Before inviting riders:
 2. Upload a known short reference/rider pair through the production Site.
    Use different reference and rider stances once and confirm the worker request
    preserves both values independently.
+   Also use different camera modes with the same declared view and confirm both
+   modes remain independent. Confirm a mismatched-view pair is blocked before
+   upload.
 3. Confirm the Site automatically moves from queued to one of four honest
    terminal states: rider selection, recapture, no reliable gap, or evidence.
 4. For evidence, confirm Show Me seeks both source clips to the returned phase

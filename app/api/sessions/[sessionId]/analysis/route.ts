@@ -11,6 +11,9 @@ type Stance = "regular" | "goofy";
 type SessionRow = {
   id: string;
   camera_mode: "fixed" | "follow";
+  view_angle: "three-quarter" | "side" | "front-rear";
+  reference_camera_mode: "fixed" | "follow";
+  reference_view_angle: "three-quarter" | "side" | "front-rear";
   rider_stance: Stance;
   reference_stance: Stance;
 };
@@ -57,7 +60,10 @@ async function dispatchToWorker(request: Request, runId: string, session: Sessio
         rider: { source_url: sourceUrls[1], first_edge: "unknown", selected_track_id: selectedTrackIds.rider ?? null },
         reference_stance: session.reference_stance,
         rider_stance: session.rider_stance,
-        camera_mode: session.camera_mode,
+        reference_camera_mode: session.reference_camera_mode,
+        rider_camera_mode: session.camera_mode,
+        reference_view_angle: session.reference_view_angle,
+        rider_view_angle: session.view_angle,
         proxy_upload_urls: { reference: proxyUrls[0], rider: proxyUrls[1] },
         callback_url: new URL(`/api/analysis-callback/${encodeURIComponent(runId)}`, origin).toString(),
       }),
@@ -103,7 +109,8 @@ export async function POST(request: Request, context: { params: Promise<{ sessio
     }
   }
   const session = await env.DB.prepare(
-    "SELECT id, camera_mode, rider_stance, reference_stance FROM sessions WHERE id = ?",
+    `SELECT id, camera_mode, view_angle, reference_camera_mode, reference_view_angle, rider_stance, reference_stance
+     FROM sessions WHERE id = ?`,
   ).bind(sessionId).first<SessionRow>();
   if (!session) return jsonError("The analysis session was not found.", 404);
 
@@ -150,7 +157,7 @@ export async function POST(request: Request, context: { params: Promise<{ sessio
     await env.DB.batch([
       env.DB.prepare(
         `INSERT INTO analysis_runs (id, session_id, status, stage, pipeline_version, model_version, started_at, created_at, updated_at)
-         VALUES (?, ?, 'queued', 'dispatching', 'video-intelligence-v0.4', 'mediapipe-pose-landmarker-lite', ?, ?, ?)`,
+         VALUES (?, ?, 'queued', 'dispatching', 'video-intelligence-v0.5', 'mediapipe-pose-landmarker-lite', ?, ?, ?)`,
       ).bind(analysisRunId, sessionId, now, now, now),
       env.DB.prepare("UPDATE sessions SET status = 'processing', updated_at = ? WHERE id = ?").bind(now, sessionId),
     ]);

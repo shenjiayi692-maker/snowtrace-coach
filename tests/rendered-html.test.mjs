@@ -63,6 +63,10 @@ test("renders capture guidance and context controls", async () => {
   assert.match(html, /Short turns/);
   assert.match(html, /Dynamic carving/);
   assert.match(html, /Follow cam/);
+  assert.match(html, /Your camera/);
+  assert.match(html, /Your view/);
+  assert.match(html, /Reference camera/);
+  assert.match(html, /Reference view/);
   assert.match(html, /Your stance/);
   assert.match(html, /Reference stance/);
   assert.match(html, /Regular/);
@@ -101,23 +105,36 @@ test("does not create a valid session while the analysis worker is offline", asy
     fingerprint: (role === "reference" ? "a" : "b").repeat(64),
     preflight: { resolutionScore: 88, durationScore: 100, exposureScore: 80, sharpnessScore: 75 },
   }));
+  const sessionBody = {
+    anonymousId: "rider_1234567890abcdef",
+    consent: {
+      version: "beta-consent-v1",
+      adultAndRightsConfirmed: true,
+      retentionAcknowledged: true,
+    },
+    goal: "medium",
+    cameraMode: "fixed",
+    referenceCameraMode: "fixed",
+    viewAngle: "three-quarter",
+    referenceViewAngle: "three-quarter",
+    stance: "regular",
+    referenceStance: "regular",
+    videos,
+  };
+  const mismatch = await fetchBuiltApp(new Request("http://localhost/api/sessions", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ ...sessionBody, referenceViewAngle: "side" }),
+  }));
+  assert.equal(mismatch.status, 400);
+  assert.deepEqual(await mismatch.json(), {
+    error: "Reference and rider clips must use the same declared view for this 2D beta.",
+  });
+
   const response = await fetchBuiltApp(new Request("http://localhost/api/sessions", {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({
-      anonymousId: "rider_1234567890abcdef",
-      consent: {
-        version: "beta-consent-v1",
-        adultAndRightsConfirmed: true,
-        retentionAcknowledged: true,
-      },
-      goal: "medium",
-      cameraMode: "fixed",
-      viewAngle: "three-quarter",
-      stance: "regular",
-      referenceStance: "regular",
-      videos,
-    }),
+    body: JSON.stringify(sessionBody),
   }));
   assert.equal(response.status, 503);
   assert.deepEqual(await response.json(), { error: "The beta analysis worker is temporarily unavailable. No video was uploaded." });

@@ -40,8 +40,10 @@ removed from the LLM input envelope.
   "goal": "medium",
   "rider_stance": "regular",
   "reference_stance": "goofy",
-  "camera_mode": "fixed",
-  "view_angle": "three-quarter",
+  "rider_camera_mode": "fixed",
+  "reference_camera_mode": "follow",
+  "rider_view_angle": "three-quarter",
+  "reference_view_angle": "three-quarter",
   "evidence": {
     "metric_id": "knee_flexion_lead",
     "phase": "apex",

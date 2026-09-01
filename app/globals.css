@@ -560,7 +560,7 @@ input:focus-visible {
 
 .context-row {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   border: 1px solid var(--line);
   margin-top: 14px;
 }
@@ -572,6 +572,14 @@ input:focus-visible {
 
 .context-field:last-child {
   border-right: 0;
+}
+
+.context-field:nth-child(3n) {
+  border-right: 0;
+}
+
+.context-field:nth-child(n + 4) {
+  border-top: 1px solid var(--line);
 }
 
 .context-field > span {
@@ -1909,6 +1917,10 @@ input:focus-visible {
   .context-field {
     border-right: 0;
     border-bottom: 1px solid var(--line);
+  }
+
+  .context-field:nth-child(n + 4) {
+    border-top: 0;
   }
 
   .context-field:last-child {

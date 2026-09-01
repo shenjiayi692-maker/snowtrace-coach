@@ -58,9 +58,21 @@ export async function POST(request: Request) {
        VALUES (?, ?, ?, 'none', ?, 'active', ?, ?)`,
     ).bind(progressionId, profileId, input.goal, referenceVideoId, now, now),
     env.DB.prepare(
-      `INSERT INTO sessions (id, progression_id, camera_mode, view_angle, rider_stance, reference_stance, status, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, 'draft', ?, ?)`,
-    ).bind(sessionId, progressionId, input.cameraMode, input.viewAngle, input.stance, input.referenceStance, now, now),
+      `INSERT INTO sessions
+        (id, progression_id, camera_mode, view_angle, reference_camera_mode, reference_view_angle, rider_stance, reference_stance, status, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'draft', ?, ?)`,
+    ).bind(
+      sessionId,
+      progressionId,
+      input.cameraMode,
+      input.viewAngle,
+      input.referenceCameraMode,
+      input.referenceViewAngle,
+      input.stance,
+      input.referenceStance,
+      now,
+      now,
+    ),
     ...input.videos.map((video) => {
       const videoId = videoIds[video.role];
       const objectKey = `source/${profileId}/${sessionId}/${videoId}`;

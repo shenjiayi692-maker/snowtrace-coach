@@ -28,6 +28,9 @@ analysis service.
 - Auto Trim quality scoring over the selected rider segment rather than clip
   setup time, while blur, camera stability, rider size, and usable turns remain
   independent gates; blocked blur or stability limits metric availability
+- Separate reference/rider camera modes plus an explicit same-view compatibility
+  gate; side and front/rear footage receive different metric allowlists rather
+  than pretending all 2D measurements survive every perspective
 - Turn segmentation, phase normalization, confidence-aware metric comparison,
   and strict evidence thresholds
 - Separate rider and reference stance snapshots so lead/trail knee labels and
@@ -43,8 +46,8 @@ analysis service.
   metrics remain correct after video expiry and do not count no-evidence runs
   as completed reports
 - Anonymous, D1-backed visible-gap history that compares sessions only when the
-  reference fingerprint, goal, camera context, both stances, metric, phase, and
-  unit match;
+  reference fingerprint, goal, both camera contexts, both stances, metric,
+  phase, and unit match;
   it is explicitly not presented as a riding score
 
 The MVP is snowboard carving only. It does not claim force, pressure, exact
@@ -106,8 +109,9 @@ Validation:
 ```
 
 The pair-analysis endpoint accepts short-lived HTTPS download URLs, optional
-short-lived proxy upload URLs, camera mode, initial edge labels, and optional
-selected rider track IDs. `SNOWTRACE_SOURCE_HOSTS` can restrict accepted source
+short-lived proxy upload URLs, per-video camera mode and stance, a shared
+declared view, initial edge labels, and optional selected rider track IDs.
+`SNOWTRACE_SOURCE_HOSTS` can restrict accepted source
 hosts in production. `/v1/jobs` adds an authenticated asynchronous wrapper and
 delivers the quality-gated result to an allowlisted HTTPS callback.
 

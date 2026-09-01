@@ -12,6 +12,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("video", type=Path)
     parser.add_argument("--role", choices=["reference", "rider"], required=True)
     parser.add_argument("--camera-mode", choices=["fixed", "follow"], default="fixed")
+    parser.add_argument("--view-angle", choices=["three-quarter", "side", "front-rear"], default="three-quarter")
     parser.add_argument("--stance", choices=["regular", "goofy"], default="regular")
     parser.add_argument("--first-edge", choices=["heelside", "toeside", "unknown"], default="unknown")
     parser.add_argument("--track-id", type=int)
@@ -28,6 +29,7 @@ def main() -> None:
         arguments.video,
         role=arguments.role,
         camera_mode=arguments.camera_mode,
+        view_angle=arguments.view_angle,
         stance=arguments.stance,
         first_edge=arguments.first_edge,
         selected_track_id=arguments.track_id,
