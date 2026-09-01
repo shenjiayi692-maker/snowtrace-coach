@@ -40,6 +40,8 @@ class PairAnalysisRequest(BaseModel):
     rider_camera_mode: Literal["fixed", "follow"]
     reference_view_angle: Literal["three-quarter", "side", "front-rear"]
     rider_view_angle: Literal["three-quarter", "side", "front-rear"]
+    reference_travel_direction: Literal["left-to-right", "right-to-left"] = "left-to-right"
+    rider_travel_direction: Literal["left-to-right", "right-to-left"] = "left-to-right"
     proxy_upload_urls: dict[Literal["reference", "rider"], str] | None = None
 
     @model_validator(mode="after")
@@ -68,7 +70,7 @@ def _positive_int_env(name: str, default: int) -> int:
 def health() -> dict[str, str]:
     return {
         "status": "ok",
-        "pipeline_version": "video-intelligence-v0.9",
+        "pipeline_version": "video-intelligence-v1.0",
         "model": Path(_model_path()).name,
     }
 
@@ -82,7 +84,7 @@ def ready() -> dict[str, object]:
     }
     if not all(checks.values()):
         raise HTTPException(503, detail={"status": "not_ready", "checks": checks})
-    return {"status": "ready", "checks": checks, "pipeline_version": "video-intelligence-v0.9"}
+    return {"status": "ready", "checks": checks, "pipeline_version": "video-intelligence-v1.0"}
 
 
 @app.post("/v1/analyze-pair")
@@ -127,6 +129,7 @@ def _run_pair_analysis(request: PairAnalysisRequest) -> dict[str, object]:
             camera_mode=request.reference_camera_mode,
             stance=request.reference_stance,
             view_angle=request.reference_view_angle,
+            travel_direction=request.reference_travel_direction,
             first_edge=request.reference.first_edge,
             selected_track_id=request.reference.selected_track_id,
         )
@@ -136,6 +139,7 @@ def _run_pair_analysis(request: PairAnalysisRequest) -> dict[str, object]:
             camera_mode=request.rider_camera_mode,
             stance=request.rider_stance,
             view_angle=request.rider_view_angle,
+            travel_direction=request.rider_travel_direction,
             first_edge=request.rider.first_edge,
             selected_track_id=request.rider.selected_track_id,
         )

@@ -46,6 +46,8 @@ removed from the LLM input envelope.
   "reference_camera_mode": "follow",
   "rider_view_angle": "three-quarter",
   "reference_view_angle": "three-quarter",
+  "rider_travel_direction": "left-to-right",
+  "reference_travel_direction": "right-to-left",
   "evidence": {
     "metric_id": "knee_flexion_lead",
     "edge_type": "heelside",

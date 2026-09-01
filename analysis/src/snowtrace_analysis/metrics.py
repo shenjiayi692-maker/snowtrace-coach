@@ -4,7 +4,7 @@ import math
 
 import numpy as np
 
-from .contracts import MetricSeries, RiderTrack, Stance
+from .contracts import MetricSeries, RiderTrack, Stance, TravelDirection
 from .geometry import line_angle, midpoint, safe_angle, signed_axis_projection, wrapped_angle_difference
 
 MIN_LANDMARK_VISIBILITY = 0.50
@@ -35,7 +35,11 @@ def metric_landmark_reliability(track: RiderTrack, stance: Stance) -> dict[str, 
     return {metric_id: _aggregate_reliability(values) for metric_id, values in samples.items()}
 
 
-def compute_metric_series(track: RiderTrack, stance: Stance) -> list[MetricSeries]:
+def compute_metric_series(
+    track: RiderTrack,
+    stance: Stance,
+    travel_direction: TravelDirection = "left-to-right",
+) -> list[MetricSeries]:
     metric_values: dict[str, list[float | None]] = {
         "knee_flexion_lead": [],
         "knee_flexion_trail": [],
@@ -50,7 +54,7 @@ def compute_metric_series(track: RiderTrack, stance: Stance) -> list[MetricSerie
     timestamps: list[int] = []
 
     for observation in track.observations:
-        landmarks = observation.landmarks
+        landmarks = _canonical_landmarks(observation.landmarks, travel_direction)
         left_knee = safe_angle(landmarks[23], landmarks[25], landmarks[27])
         right_knee = safe_angle(landmarks[24], landmarks[26], landmarks[28])
         lead_knee, trail_knee = (left_knee, right_knee) if stance == "regular" else (right_knee, left_knee)
@@ -107,6 +111,14 @@ def compute_metric_series(track: RiderTrack, stance: Stance) -> list[MetricSerie
         )
         for metric_id, values in metric_values.items()
     ]
+
+
+def _canonical_landmarks(landmarks: np.ndarray, travel_direction: TravelDirection) -> np.ndarray:
+    if travel_direction == "left-to-right":
+        return landmarks
+    canonical = landmarks.copy()
+    canonical[:, 0] = 1.0 - canonical[:, 0]
+    return canonical
 
 
 def _aggregate_reliability(confidences: list[float]) -> tuple[float, float]:

@@ -13,7 +13,7 @@ class ApiTests(unittest.TestCase):
         response = TestClient(app).get("/health")
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json()["status"], "ok")
-        self.assertEqual(response.json()["pipeline_version"], "video-intelligence-v0.9")
+        self.assertEqual(response.json()["pipeline_version"], "video-intelligence-v1.0")
 
     def test_ready_checks_runtime_dependencies(self):
         with patch("snowtrace_analysis.api.shutil.which", return_value="/usr/bin/tool"):
@@ -48,6 +48,8 @@ class ApiTests(unittest.TestCase):
             rider_view_angle="side",
             reference_stance="goofy",
             rider_stance="regular",
+            reference_travel_direction="right-to-left",
+            rider_travel_direction="left-to-right",
             reference={"source_url": "https://example.com/reference.mp4", "first_edge": "toeside"},
             rider={"source_url": "https://example.com/rider.mp4", "first_edge": "heelside"},
         )
@@ -73,6 +75,8 @@ class ApiTests(unittest.TestCase):
         self.assertEqual(pipeline.analyze_video.call_args_list[1].kwargs["view_angle"], "side")
         self.assertEqual(pipeline.analyze_video.call_args_list[0].kwargs["first_edge"], "toeside")
         self.assertEqual(pipeline.analyze_video.call_args_list[1].kwargs["first_edge"], "heelside")
+        self.assertEqual(pipeline.analyze_video.call_args_list[0].kwargs["travel_direction"], "right-to-left")
+        self.assertEqual(pipeline.analyze_video.call_args_list[1].kwargs["travel_direction"], "left-to-right")
 
     def test_pair_contract_rejects_mismatched_views_before_analysis(self):
         response = TestClient(app).post(

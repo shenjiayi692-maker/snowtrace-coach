@@ -1,0 +1,2 @@
+ALTER TABLE `sessions` ADD `rider_travel_direction` text DEFAULT 'left-to-right' NOT NULL;--> statement-breakpoint
+ALTER TABLE `sessions` ADD `reference_travel_direction` text DEFAULT 'left-to-right' NOT NULL;

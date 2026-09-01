@@ -65,14 +65,18 @@ test("renders capture guidance and context controls", async () => {
   assert.match(html, /Follow cam/);
   assert.match(html, /Your camera/);
   assert.match(html, /Your view/);
+  assert.match(html, /Your travel/);
   assert.match(html, /Reference camera/);
   assert.match(html, /Reference view/);
+  assert.match(html, /Reference travel/);
   assert.match(html, /Your stance/);
   assert.match(html, /Reference stance/);
   assert.match(html, /Your first turn/);
   assert.match(html, /Reference first turn/);
   assert.match(html, /Choose edge/);
-  assert.match(html, /pair heelside with heelside and toeside with toeside/);
+  assert.match(html, /Left → right/);
+  assert.match(html, /mirrors pose coordinates/);
+  assert.match(html, /keeps heelside paired with heelside, toeside with toeside/);
   assert.match(html, /Regular/);
   assert.match(html, /Goofy/);
 });
@@ -121,6 +125,8 @@ test("does not create a valid session while the analysis worker is offline", asy
     referenceCameraMode: "fixed",
     viewAngle: "three-quarter",
     referenceViewAngle: "three-quarter",
+    travelDirection: "left-to-right",
+    referenceTravelDirection: "right-to-left",
     stance: "regular",
     referenceStance: "regular",
     firstEdge: "heelside",
@@ -135,6 +141,16 @@ test("does not create a valid session while the analysis worker is offline", asy
   assert.equal(mismatch.status, 400);
   assert.deepEqual(await mismatch.json(), {
     error: "Reference and rider clips must use the same declared view for this 2D beta.",
+  });
+
+  const missingDirection = await fetchBuiltApp(new Request("http://localhost/api/sessions", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ ...sessionBody, travelDirection: undefined }),
+  }));
+  assert.equal(missingDirection.status, 400);
+  assert.deepEqual(await missingDirection.json(), {
+    error: "Choose your direction of travel across the frame.",
   });
 
   const response = await fetchBuiltApp(new Request("http://localhost/api/sessions", {

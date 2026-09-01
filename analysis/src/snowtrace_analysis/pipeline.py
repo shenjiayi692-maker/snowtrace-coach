@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from .contracts import CameraMode, EdgeType, QualityGateResult, Stance, VideoAnalysisResult, VideoRole, ViewAngle
+from .contracts import CameraMode, EdgeType, QualityGateResult, Stance, TravelDirection, VideoAnalysisResult, VideoRole, ViewAngle
 from .metrics import compute_metric_series
 from .phases import detect_turns
 from .pose import extract_tracks, rider_candidates, selection_is_ambiguous
@@ -24,6 +24,7 @@ class AnalysisPipeline:
         camera_mode: CameraMode,
         stance: Stance = "regular",
         view_angle: ViewAngle = "three-quarter",
+        travel_direction: TravelDirection = "left-to-right",
         first_edge: EdgeType = "unknown",
         selected_track_id: int | None = None,
     ) -> VideoAnalysisResult:
@@ -46,10 +47,40 @@ class AnalysisPipeline:
                     "Use a stable fixed camera and avoid strong backlight or heavy motion blur.",
                 ],
             )
-            return VideoAnalysisResult(role, camera_mode, view_angle, metadata, proxy_path, None, [], None, None, [], quality, [], "rejected")
+            return VideoAnalysisResult(
+                role=role,
+                camera_mode=camera_mode,
+                view_angle=view_angle,
+                metadata=metadata,
+                proxy_path=proxy_path,
+                selected_track_id=None,
+                rider_candidates=[],
+                segment_start_ms=None,
+                segment_end_ms=None,
+                turns=[],
+                quality=quality,
+                metrics=[],
+                status="rejected",
+                travel_direction=travel_direction,
+            )
 
         if selected_track_id is None and selection_is_ambiguous(tracks):
-            return VideoAnalysisResult(role, camera_mode, view_angle, metadata, proxy_path, None, candidates, None, None, [], None, [], "needs_rider")
+            return VideoAnalysisResult(
+                role=role,
+                camera_mode=camera_mode,
+                view_angle=view_angle,
+                metadata=metadata,
+                proxy_path=proxy_path,
+                selected_track_id=None,
+                rider_candidates=candidates,
+                segment_start_ms=None,
+                segment_end_ms=None,
+                turns=[],
+                quality=None,
+                metrics=[],
+                status="needs_rider",
+                travel_direction=travel_direction,
+            )
 
         if selected_track_id is None:
             selected = tracks[0]
@@ -70,7 +101,7 @@ class AnalysisPipeline:
             view_angle=view_angle,
             stance=stance,
         )
-        metrics = compute_metric_series(selected, stance) if quality.status != "rejected" else []
+        metrics = compute_metric_series(selected, stance, travel_direction) if quality.status != "rejected" else []
         return VideoAnalysisResult(
             role=role,
             camera_mode=camera_mode,
@@ -86,4 +117,5 @@ class AnalysisPipeline:
             metrics=metrics,
             status="rejected" if quality.status == "rejected" else "completed",
             selected_track=selected,
+            travel_direction=travel_direction,
         )

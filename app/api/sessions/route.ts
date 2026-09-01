@@ -60,8 +60,9 @@ export async function POST(request: Request) {
     env.DB.prepare(
       `INSERT INTO sessions
         (id, progression_id, camera_mode, view_angle, reference_camera_mode, reference_view_angle,
-         rider_stance, reference_stance, rider_first_edge, reference_first_edge, status, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'draft', ?, ?)`,
+         rider_travel_direction, reference_travel_direction, rider_stance, reference_stance,
+         rider_first_edge, reference_first_edge, status, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'draft', ?, ?)`,
     ).bind(
       sessionId,
       progressionId,
@@ -69,6 +70,8 @@ export async function POST(request: Request) {
       input.viewAngle,
       input.referenceCameraMode,
       input.referenceViewAngle,
+      input.travelDirection,
+      input.referenceTravelDirection,
       input.stance,
       input.referenceStance,
       input.firstEdge,

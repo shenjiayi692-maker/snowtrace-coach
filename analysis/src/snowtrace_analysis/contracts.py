@@ -9,6 +9,7 @@ import numpy as np
 VideoRole = Literal["reference", "rider"]
 CameraMode = Literal["fixed", "follow"]
 ViewAngle = Literal["three-quarter", "side", "front-rear"]
+TravelDirection = Literal["left-to-right", "right-to-left"]
 EdgeType = Literal["heelside", "toeside", "unknown"]
 ComparableEdge = Literal["heelside", "toeside"]
 TurnPhase = Literal["initiation", "shaping", "apex", "completion"]
@@ -124,13 +125,15 @@ class VideoAnalysisResult:
     metrics: list[MetricSeries]
     status: Literal["needs_rider", "rejected", "completed"]
     selected_track: RiderTrack | None = field(default=None, repr=False)
-    pipeline_version: str = "video-intelligence-v0.9"
+    travel_direction: TravelDirection = "left-to-right"
+    pipeline_version: str = "video-intelligence-v1.0"
 
     def to_dict(self) -> dict[str, Any]:
         return {
             "role": self.role,
             "camera_mode": self.camera_mode,
             "view_angle": self.view_angle,
+            "travel_direction": self.travel_direction,
             "metadata": self.metadata.to_dict(),
             "proxy_path": str(self.proxy_path),
             "selected_track_id": self.selected_track_id,

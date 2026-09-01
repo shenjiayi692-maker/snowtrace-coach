@@ -35,6 +35,8 @@ export type CreateSessionInput = {
   referenceCameraMode: "fixed" | "follow";
   viewAngle: "three-quarter" | "side" | "front-rear";
   referenceViewAngle: "three-quarter" | "side" | "front-rear";
+  travelDirection: "left-to-right" | "right-to-left";
+  referenceTravelDirection: "left-to-right" | "right-to-left";
   stance: "regular" | "goofy";
   referenceStance: "regular" | "goofy";
   firstEdge: "heelside" | "toeside";
@@ -49,6 +51,7 @@ type ParseResult =
 const goals = new Set(["medium", "short", "dynamic"]);
 const cameras = new Set(["fixed", "follow"]);
 const views = new Set(["three-quarter", "side", "front-rear"]);
+const travelDirections = new Set(["left-to-right", "right-to-left"]);
 const stances = new Set(["regular", "goofy"]);
 const edges = new Set(["heelside", "toeside"]);
 
@@ -121,6 +124,12 @@ export function parseCreateSessionInput(input: unknown): ParseResult {
   if (value.viewAngle !== value.referenceViewAngle) {
     return { ok: false, error: "Reference and rider clips must use the same declared view for this 2D beta." };
   }
+  if (typeof value.travelDirection !== "string" || !travelDirections.has(value.travelDirection)) {
+    return { ok: false, error: "Choose your direction of travel across the frame." };
+  }
+  if (typeof value.referenceTravelDirection !== "string" || !travelDirections.has(value.referenceTravelDirection)) {
+    return { ok: false, error: "Choose the reference rider's direction of travel across the frame." };
+  }
   if (typeof value.stance !== "string" || !stances.has(value.stance)) return { ok: false, error: "Choose regular or goofy stance." };
   if (typeof value.referenceStance !== "string" || !stances.has(value.referenceStance)) {
     return { ok: false, error: "Choose the reference rider's stance." };
@@ -154,6 +163,8 @@ export function parseCreateSessionInput(input: unknown): ParseResult {
       referenceCameraMode: value.referenceCameraMode as CreateSessionInput["referenceCameraMode"],
       viewAngle: value.viewAngle as CreateSessionInput["viewAngle"],
       referenceViewAngle: value.referenceViewAngle as CreateSessionInput["referenceViewAngle"],
+      travelDirection: value.travelDirection as CreateSessionInput["travelDirection"],
+      referenceTravelDirection: value.referenceTravelDirection as CreateSessionInput["referenceTravelDirection"],
       stance: value.stance as CreateSessionInput["stance"],
       referenceStance: value.referenceStance as CreateSessionInput["referenceStance"],
       firstEdge: value.firstEdge as CreateSessionInput["firstEdge"],

@@ -9,6 +9,8 @@ type ProgressRow = {
   view_angle: "three-quarter" | "side" | "front-rear";
   reference_camera_mode: "fixed" | "follow";
   reference_view_angle: "three-quarter" | "side" | "front-rear";
+  rider_travel_direction: "left-to-right" | "right-to-left";
+  reference_travel_direction: "left-to-right" | "right-to-left";
   rider_stance: "regular" | "goofy";
   reference_stance: "regular" | "goofy";
   rider_first_edge: "heelside" | "toeside" | "unknown";
@@ -44,6 +46,8 @@ export async function POST(request: Request) {
        sessions.view_angle,
        sessions.reference_camera_mode,
        sessions.reference_view_angle,
+       sessions.rider_travel_direction,
+       sessions.reference_travel_direction,
        sessions.rider_stance,
        sessions.reference_stance,
        sessions.rider_first_edge,
@@ -86,6 +90,8 @@ export async function POST(request: Request) {
         viewAngle: row.view_angle,
         referenceCameraMode: row.reference_camera_mode,
         referenceViewAngle: row.reference_view_angle,
+        riderTravelDirection: row.rider_travel_direction,
+        referenceTravelDirection: row.reference_travel_direction,
         riderStance: row.rider_stance,
         referenceStance: row.reference_stance,
         riderFirstEdge: row.rider_first_edge,
@@ -114,6 +120,8 @@ export async function POST(request: Request) {
         candidate.viewAngle === item.viewAngle &&
         candidate.referenceCameraMode === item.referenceCameraMode &&
         candidate.referenceViewAngle === item.referenceViewAngle &&
+        candidate.riderTravelDirection === item.riderTravelDirection &&
+        candidate.referenceTravelDirection === item.referenceTravelDirection &&
         candidate.riderStance === item.riderStance &&
         candidate.referenceStance === item.referenceStance &&
         candidate.riderFirstEdge === item.riderFirstEdge &&

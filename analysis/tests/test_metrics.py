@@ -55,6 +55,28 @@ class MetricTests(unittest.TestCase):
         self.assertGreater(regular["fore_aft_pelvis"], 0.0)
         self.assertAlmostEqual(regular["fore_aft_pelvis"], -goofy["fore_aft_pelvis"])
 
+    def test_screen_direction_is_canonicalized_without_mutating_pose_data(self):
+        original = asymmetric_track()
+        mirrored = asymmetric_track()
+        mirrored.observations[0].landmarks[:, 0] = 1.0 - mirrored.observations[0].landmarks[:, 0]
+        mirrored_before = mirrored.observations[0].landmarks.copy()
+
+        for stance in ("regular", "goofy"):
+            left_to_right = compute_metric_series(original, stance, "left-to-right")
+            right_to_left = compute_metric_series(mirrored, stance, "right-to-left")
+            self.assertEqual(
+                {series.metric_id: series.values for series in left_to_right},
+                {series.metric_id: series.values for series in right_to_left},
+            )
+        np.testing.assert_array_equal(mirrored.observations[0].landmarks, mirrored_before)
+
+        unnormalized = {series.metric_id: series.values[0] for series in compute_metric_series(mirrored, "regular")}
+        normalized = {
+            series.metric_id: series.values[0]
+            for series in compute_metric_series(mirrored, "regular", "right-to-left")
+        }
+        self.assertAlmostEqual(unnormalized["projected_inclination"], -normalized["projected_inclination"])
+
 
 if __name__ == "__main__":
     unittest.main()

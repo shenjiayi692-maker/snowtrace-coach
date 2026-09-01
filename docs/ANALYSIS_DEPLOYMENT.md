@@ -59,7 +59,8 @@ Before inviting riders:
 1. Confirm `/ready` returns `200` and all three checks are `true`.
 2. Upload a known short reference/rider pair through the production Site.
    Use different reference and rider stances once and confirm the worker request
-   preserves both values independently.
+   preserves each stance. Then use opposite screen travel directions and confirm
+   the worker receives both declarations while signed metrics remain canonical.
    Also use different camera modes with the same declared view and confirm both
    modes remain independent. Confirm a mismatched-view pair is blocked before
    upload. Start the two clips on opposite edges, label each first complete turn,

@@ -34,6 +34,8 @@ export const sessions = sqliteTable("sessions", {
   viewAngle: text("view_angle", { enum: ["three-quarter", "side", "front-rear"] }).notNull(),
   referenceCameraMode: text("reference_camera_mode", { enum: ["fixed", "follow"] }).notNull().default("fixed"),
   referenceViewAngle: text("reference_view_angle", { enum: ["three-quarter", "side", "front-rear"] }).notNull().default("three-quarter"),
+  riderTravelDirection: text("rider_travel_direction", { enum: ["left-to-right", "right-to-left"] }).notNull().default("left-to-right"),
+  referenceTravelDirection: text("reference_travel_direction", { enum: ["left-to-right", "right-to-left"] }).notNull().default("left-to-right"),
   riderStance: text("rider_stance", { enum: ["regular", "goofy"] }).notNull().default("regular"),
   referenceStance: text("reference_stance", { enum: ["regular", "goofy"] }).notNull().default("regular"),
   riderFirstEdge: text("rider_first_edge", { enum: ["heelside", "toeside", "unknown"] }).notNull().default("unknown"),

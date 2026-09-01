@@ -614,6 +614,8 @@ export function CoachApp() {
   const [view, setView] = useState("three-quarter");
   const [referenceCamera, setReferenceCamera] = useState("fixed");
   const [referenceView, setReferenceView] = useState("three-quarter");
+  const [travelDirection, setTravelDirection] = useState("");
+  const [referenceTravelDirection, setReferenceTravelDirection] = useState("");
   const [stance, setStance] = useState("regular");
   const [referenceStance, setReferenceStance] = useState("regular");
   const [firstEdge, setFirstEdge] = useState("");
@@ -858,6 +860,8 @@ export function CoachApp() {
     reference &&
     rider &&
     !busyRole &&
+    travelDirection &&
+    referenceTravelDirection &&
     firstEdge &&
     referenceFirstEdge &&
     adultAndRightsConfirmed &&
@@ -906,6 +910,8 @@ export function CoachApp() {
       !referenceFile ||
       !riderFile ||
       !viewsCompatible ||
+      !travelDirection ||
+      !referenceTravelDirection ||
       !firstEdge ||
       !referenceFirstEdge ||
       !adultAndRightsConfirmed ||
@@ -939,6 +945,8 @@ export function CoachApp() {
           referenceCameraMode: referenceCamera,
           viewAngle: view,
           referenceViewAngle: referenceView,
+          travelDirection,
+          referenceTravelDirection,
           stance,
           referenceStance,
           firstEdge,
@@ -1236,6 +1244,16 @@ export function CoachApp() {
                 ]}
               />
               <ContextSelector
+                label="Your travel"
+                value={travelDirection}
+                onChange={setTravelDirection}
+                options={[
+                  { value: "", label: "Select" },
+                  { value: "left-to-right", label: "Left → right" },
+                  { value: "right-to-left", label: "Right → left" },
+                ]}
+              />
+              <ContextSelector
                 label="Your stance"
                 value={stance}
                 onChange={setStance}
@@ -1268,6 +1286,16 @@ export function CoachApp() {
                 ]}
               />
               <ContextSelector
+                label="Reference travel"
+                value={referenceTravelDirection}
+                onChange={setReferenceTravelDirection}
+                options={[
+                  { value: "", label: "Select" },
+                  { value: "left-to-right", label: "Left → right" },
+                  { value: "right-to-left", label: "Right → left" },
+                ]}
+              />
+              <ContextSelector
                 label="Reference stance"
                 value={referenceStance}
                 onChange={setReferenceStance}
@@ -1285,7 +1313,7 @@ export function CoachApp() {
               />
             </div>
             <p className="context-help">
-              First turn means the first complete turn visible after the rider enters frame. Snowtrace uses it only to pair heelside with heelside and toeside with toeside.
+              Travel means the rider&apos;s direction across the screen; Snowtrace mirrors pose coordinates so opposite filming directions remain comparable. First turn means the first complete turn after the rider enters frame and keeps heelside paired with heelside, toeside with toeside.
             </p>
 
             <fieldset className="consent-card">
@@ -1340,7 +1368,7 @@ export function CoachApp() {
             ) : (
               <p className="progress-empty">Your first accepted comparison will become the baseline for a future like-for-like run.</p>
             )}
-            <small>Same reference, goal, both camera modes, shared view, both stances, both first-turn labels, metric, edge and turn phase required. Filming differences can still affect 2D pose.</small>
+            <small>Same reference, goal, both camera modes, shared view, both screen travel directions, both stances, both first-turn labels, metric, edge and turn phase required. Filming differences can still affect 2D pose.</small>
           </section>
         </div>
       )}

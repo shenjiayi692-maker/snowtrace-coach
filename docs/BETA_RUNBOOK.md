@@ -35,8 +35,9 @@ group.
 ## Rider protocol
 
 1. Rider selects one reference clip and one recent clip of their own.
-2. Rider records goal, each rider's stance, each clip's camera mode and view,
-   and whether the first complete turn visible in each clip is heelside or
+2. Rider records goal, each rider's stance, each clip's camera mode, view, and
+   left-to-right or right-to-left screen travel direction, and whether the
+   first complete turn visible in each clip is heelside or
    toeside. Do not assume the reference uses the user's stance, camera mode, or
    starting edge. The beta requires both clips to use the same declared view
    category.
@@ -48,7 +49,8 @@ group.
 5. Rider reads one drill and submits the three in-product feedback answers.
 6. Within 3–7 days, invite the rider to film the same goal again after trying
    the drill. Ask them to reuse the same reference clip, both camera contexts,
-   and the same first-turn labels when they want a visible-gap comparison.
+   the same screen travel directions, and the same first-turn labels when they
+   want a visible-gap comparison.
    Record whether they upload a second complete pair; do not count verbal intent
    as retention.
 7. Conduct a 15-minute interview after the product task.
@@ -109,8 +111,9 @@ completed run can legitimately contain no reliable evidence and no report.
 The upload page shows at most three recent evidence-backed gaps for the
 anonymous device identity. It computes a directional gap change only when the
 reference file fingerprint, goal, both camera modes, both views, rider stance,
-reference stance, both first-turn labels, metric, edge type, phase, and unit all
-match a prior record. Label this as movement relative to one reference, never
+reference stance, both screen travel directions, both first-turn labels, metric,
+edge type, phase, and unit all match a prior record. Label this as movement
+relative to one reference, never
 as skill, certification level, or proof that technique improved. A different
 reference or filming context starts a new baseline.
 

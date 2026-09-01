@@ -46,6 +46,10 @@ analysis service.
 - Separate rider and reference stance snapshots so lead/trail knee labels and
   the normalized fore/aft axis remain anatomical for both regular and goofy
   riders instead of silently treating left as lead
+- Explicit per-clip screen travel direction with landmark-only horizontal
+  canonicalization, so a left-to-right rider can be compared with a
+  right-to-left reference without flipping signed 2D movement metrics or
+  altering the source video and Show Me overlay
 - Evidence-frame pose snapshots rendered as synchronized skeleton overlays in
   the Show Me comparison; the displayed turn pair is the one closest to the
   median accepted gap, and whole-video landmark streams are not sent to the web
@@ -58,7 +62,7 @@ analysis service.
   as completed reports
 - Anonymous, D1-backed visible-gap history that compares sessions only when the
   reference fingerprint, goal, both camera contexts, both stances, both
-  first-turn labels, metric, edge, phase, and unit match;
+  screen travel directions, first-turn labels, metric, edge, phase, and unit match;
   it is explicitly not presented as a riding score
 
 The MVP is snowboard carving only. It does not claim force, pressure, exact
@@ -121,9 +125,10 @@ Validation:
 
 The pair-analysis endpoint accepts short-lived HTTPS download URLs, optional
 short-lived proxy upload URLs, per-video camera mode and stance, a shared
-declared view, a required first-complete-turn edge label for each clip, and
-optional selected rider track IDs. Edge labels keep heelside turns paired only
-with heelside turns and toeside turns paired only with toeside turns.
+declared view, an explicit screen travel direction and first-complete-turn edge
+label for each clip, and optional selected rider track IDs. Screen direction is
+canonicalized only in metric coordinates; edge labels keep heelside turns
+paired only with heelside turns and toeside turns paired only with toeside turns.
 `SNOWTRACE_SOURCE_HOSTS` can restrict accepted source
 hosts in production. `/v1/jobs` adds an authenticated asynchronous wrapper and
 delivers the quality-gated result to an allowlisted HTTPS callback.

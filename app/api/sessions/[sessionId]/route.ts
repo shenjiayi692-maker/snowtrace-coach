@@ -11,6 +11,8 @@ type SessionRow = {
   view_angle: string;
   reference_camera_mode: string;
   reference_view_angle: string;
+  rider_travel_direction: string;
+  reference_travel_direction: string;
   rider_first_edge: string;
   reference_first_edge: string;
   created_at: string;
@@ -152,6 +154,7 @@ export async function GET(_request: Request, context: { params: Promise<{ sessio
   const { sessionId } = await context.params;
   const session = await env.DB.prepare(
     `SELECT id, progression_id, status, camera_mode, view_angle, reference_camera_mode, reference_view_angle,
+       rider_travel_direction, reference_travel_direction,
        rider_first_edge, reference_first_edge, created_at, updated_at
      FROM sessions WHERE id = ?`,
   ).bind(sessionId).first<SessionRow>();
