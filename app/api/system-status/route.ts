@@ -7,6 +7,6 @@ export async function GET() {
   return Response.json({
     analysisAvailable: analysisServiceConfigured(env),
     productScope: "snowboard_carving",
-    pipelineVersion: "video-intelligence-v0.5",
+    pipelineVersion: "video-intelligence-v0.6",
   }, { headers: { "cache-control": "no-store" } });
 }

@@ -37,6 +37,8 @@ export type CreateSessionInput = {
   referenceViewAngle: "three-quarter" | "side" | "front-rear";
   stance: "regular" | "goofy";
   referenceStance: "regular" | "goofy";
+  firstEdge: "heelside" | "toeside";
+  referenceFirstEdge: "heelside" | "toeside";
   videos: SessionVideoInput[];
 };
 
@@ -48,6 +50,7 @@ const goals = new Set(["medium", "short", "dynamic"]);
 const cameras = new Set(["fixed", "follow"]);
 const views = new Set(["three-quarter", "side", "front-rear"]);
 const stances = new Set(["regular", "goofy"]);
+const edges = new Set(["heelside", "toeside"]);
 
 function finiteNumber(value: unknown, min: number, max: number) {
   return typeof value === "number" && Number.isFinite(value) && value >= min && value <= max;
@@ -122,6 +125,12 @@ export function parseCreateSessionInput(input: unknown): ParseResult {
   if (typeof value.referenceStance !== "string" || !stances.has(value.referenceStance)) {
     return { ok: false, error: "Choose the reference rider's stance." };
   }
+  if (typeof value.firstEdge !== "string" || !edges.has(value.firstEdge)) {
+    return { ok: false, error: "Choose the first complete turn edge in your clip." };
+  }
+  if (typeof value.referenceFirstEdge !== "string" || !edges.has(value.referenceFirstEdge)) {
+    return { ok: false, error: "Choose the first complete turn edge in the reference clip." };
+  }
   if (!Array.isArray(value.videos) || value.videos.length !== 2) return { ok: false, error: "Provide one reference video and one rider video." };
 
   const videos = value.videos.map(parseVideo);
@@ -147,6 +156,8 @@ export function parseCreateSessionInput(input: unknown): ParseResult {
       referenceViewAngle: value.referenceViewAngle as CreateSessionInput["referenceViewAngle"],
       stance: value.stance as CreateSessionInput["stance"],
       referenceStance: value.referenceStance as CreateSessionInput["referenceStance"],
+      firstEdge: value.firstEdge as CreateSessionInput["firstEdge"],
+      referenceFirstEdge: value.referenceFirstEdge as CreateSessionInput["referenceFirstEdge"],
       videos: parsedVideos,
     },
   };

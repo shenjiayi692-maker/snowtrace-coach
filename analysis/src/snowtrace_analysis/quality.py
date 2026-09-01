@@ -86,7 +86,7 @@ def build_quality_gate(
     if bbox_height < 0.12:
         failures.append("rider_too_small")
         instructions.append("Move the camera closer so the rider occupies at least 20% of frame height.")
-    if len(turns) < 2:
+    if len(turns) < 3:
         failures.append("insufficient_turns")
         instructions.append("Record at least three connected S-turns.")
     if blur_score < 50:

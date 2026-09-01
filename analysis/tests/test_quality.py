@@ -38,6 +38,15 @@ class QualityTests(unittest.TestCase):
         self.assertEqual(result.status, "rejected")
         self.assertIn("rider_too_small", result.hard_failures)
 
+    def test_two_turns_are_not_enough_for_same_edge_pairing(self):
+        track = track_with_quality(100, 0.92, 0.42)
+        turns = [Turn(index, "heelside" if index == 0 else "toeside", index * 1000, index * 1000 + 400, index * 1000 + 800, 0.9) for index in range(2)]
+
+        result = build_quality_gate(track, turns, blur_score=90, exposure_score=90, stability_score=90, camera_mode="fixed", view_angle="three-quarter")
+
+        self.assertEqual(result.status, "rejected")
+        self.assertIn("insufficient_turns", result.hard_failures)
+
     def test_follow_camera_is_limited(self):
         track = track_with_quality(100, 0.92, 0.42)
         turns = [Turn(index, "unknown", index * 1000, index * 1000 + 400, index * 1000 + 800, 0.9) for index in range(3)]

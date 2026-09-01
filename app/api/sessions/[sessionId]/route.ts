@@ -11,6 +11,8 @@ type SessionRow = {
   view_angle: string;
   reference_camera_mode: string;
   reference_view_angle: string;
+  rider_first_edge: string;
+  reference_first_edge: string;
   created_at: string;
   updated_at: string;
 };
@@ -29,7 +31,7 @@ type VideoRow = {
   metadata_json: string | null;
   expires_at: string;
 };
-type EvidenceRow = { metric_id: string; rank: number; confidence: number; effect_size: number; phase: string; user_timestamp_ms: number; reference_timestamp_ms: number; evidence_json: string };
+type EvidenceRow = { metric_id: string; edge_type: string; rank: number; confidence: number; effect_size: number; phase: string; user_timestamp_ms: number; reference_timestamp_ms: number; evidence_json: string };
 type OutputRow = { status: string; result_json: string };
 
 type QualityCheckSnapshot = {
@@ -149,7 +151,8 @@ function riderSelectionAction(output: OutputRow | null) {
 export async function GET(_request: Request, context: { params: Promise<{ sessionId: string }> }) {
   const { sessionId } = await context.params;
   const session = await env.DB.prepare(
-    `SELECT id, progression_id, status, camera_mode, view_angle, reference_camera_mode, reference_view_angle, created_at, updated_at
+    `SELECT id, progression_id, status, camera_mode, view_angle, reference_camera_mode, reference_view_angle,
+       rider_first_edge, reference_first_edge, created_at, updated_at
      FROM sessions WHERE id = ?`,
   ).bind(sessionId).first<SessionRow>();
   if (!session) return jsonError("The analysis session was not found.", 404);
@@ -182,7 +185,7 @@ export async function GET(_request: Request, context: { params: Promise<{ sessio
     };
   }));
   const evidenceResult = run ? await env.DB.prepare(
-    `SELECT metric_id, rank, confidence, effect_size, phase, user_timestamp_ms, reference_timestamp_ms, evidence_json
+    `SELECT metric_id, edge_type, rank, confidence, effect_size, phase, user_timestamp_ms, reference_timestamp_ms, evidence_json
      FROM comparison_evidence WHERE analysis_run_id = ? ORDER BY rank LIMIT 3`,
   ).bind(run.id).all<EvidenceRow>() : { results: [] };
   const output = run ? await env.DB.prepare(

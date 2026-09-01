@@ -15,7 +15,8 @@ the production fallback even after an LLM renderer is enabled.
 Call the renderer only when all of the following are true:
 
 - both videos passed the pose quality gate;
-- at least two turns were paired;
+- both clips have an explicit first-complete-turn edge label;
+- at least two same-edge turns were paired;
 - the top evidence item has confidence of at least 0.70;
 - effect size is at least 1.0 after the per-metric noise floor;
 - the metric is allowed for both camera views;
@@ -46,6 +47,7 @@ removed from the LLM input envelope.
   "reference_view_angle": "three-quarter",
   "evidence": {
     "metric_id": "knee_flexion_lead",
+    "edge_type": "heelside",
     "phase": "apex",
     "reference_value": 44,
     "user_value": 57,
@@ -83,6 +85,7 @@ and every object sets `additionalProperties` to `false`.
 {
   "schema_version": "coach-output-v1",
   "metric_id": "knee_flexion_lead",
+  "edge_type": "heelside",
   "observation": "...",
   "possible_explanation": "...",
   "drill_id": "progressive-flexion-v1",
@@ -92,9 +95,10 @@ and every object sets `additionalProperties` to `false`.
 }
 ```
 
-The server verifies that `metric_id` matches the evidence and `drill_id` is in
-`allowed_drills`. It rejects new numbers, absolute diagnosis, and claims about
-force, pressure, equipment causality, exact edge angle, or true 3D motion.
+The server verifies that `metric_id` and `edge_type` match the evidence and
+`drill_id` is in `allowed_drills`. It rejects new numbers, absolute diagnosis,
+and claims about force, pressure, equipment causality, exact edge angle, or
+true 3D motion.
 
 ## System instruction
 
@@ -102,6 +106,7 @@ Use a short, versioned instruction:
 
 > Render one accepted snowboard carving comparison into cautious coaching
 > language. Use only the supplied evidence and one supplied drill. Describe
+> the supplied edge and phase exactly; never merge or relabel edges. Describe
 > causes as possibilities. Never infer force, pressure, pain, injury, equipment
 > suitability, exact edge angle, or 3D physics. Do not add measurements. Return
 > only the required structured fields.
@@ -112,15 +117,15 @@ needed.
 ## Validation and fallback
 
 1. Validate the strict response schema.
-2. Confirm echoed metric and selected drill IDs.
+2. Confirm echoed metric, edge, and selected drill IDs.
 3. Reject numerical claims not present in the input.
 4. Reject prohibited biomechanical or medical language.
 5. Enforce short field limits before display.
 6. On refusal, timeout, API error, validation failure, or missing API key, use
    the deterministic template and record the fallback reason.
 
-The UI always displays the underlying confidence, paired-turn count, phase, and
-Show Me timestamps independently of the generated wording.
+The UI always displays the underlying confidence, same-edge paired-turn count,
+edge, phase, and Show Me timestamps independently of the generated wording.
 
 ## Versioning and evaluation
 

@@ -51,6 +51,7 @@ function sanitizeEvidence(value: unknown): Record<string, unknown> | null {
   const item = value as Record<string, unknown>;
   if (
     typeof item.metric_id !== "string" || !metricIds.has(item.metric_id) ||
+    !["heelside", "toeside"].includes(String(item.edge_type)) ||
     !Number.isInteger(item.rank) || !finiteNumber(item.rank, 1, 20) ||
     !["initiation", "shaping", "apex", "completion"].includes(String(item.phase)) ||
     !finiteNumber(item.confidence, 0, 1) || !finiteNumber(item.effect_size, 0, 100) ||
@@ -66,6 +67,7 @@ function sanitizeEvidence(value: unknown): Record<string, unknown> | null {
   if ((item.reference_pose != null && !referencePose) || (item.user_pose != null && !userPose)) return null;
   return {
     metric_id: item.metric_id,
+    edge_type: item.edge_type,
     rank: item.rank,
     phase: item.phase,
     confidence: item.confidence,
@@ -123,12 +125,13 @@ export async function POST(request: Request, context: { params: Promise<{ analys
     env.DB.prepare("DELETE FROM comparison_evidence WHERE analysis_run_id = ?").bind(analysisRunId),
     ...evidence.map((item) => env.DB.prepare(
       `INSERT INTO comparison_evidence
-        (id, analysis_run_id, metric_id, rank, confidence, effect_size, phase, user_timestamp_ms, reference_timestamp_ms, evidence_json)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        (id, analysis_run_id, metric_id, edge_type, rank, confidence, effect_size, phase, user_timestamp_ms, reference_timestamp_ms, evidence_json)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     ).bind(
       `ev_${crypto.randomUUID()}`,
       analysisRunId,
       item.metric_id,
+      item.edge_type,
       item.rank,
       item.confidence,
       item.effect_size,

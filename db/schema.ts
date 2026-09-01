@@ -36,6 +36,8 @@ export const sessions = sqliteTable("sessions", {
   referenceViewAngle: text("reference_view_angle", { enum: ["three-quarter", "side", "front-rear"] }).notNull().default("three-quarter"),
   riderStance: text("rider_stance", { enum: ["regular", "goofy"] }).notNull().default("regular"),
   referenceStance: text("reference_stance", { enum: ["regular", "goofy"] }).notNull().default("regular"),
+  riderFirstEdge: text("rider_first_edge", { enum: ["heelside", "toeside", "unknown"] }).notNull().default("unknown"),
+  referenceFirstEdge: text("reference_first_edge", { enum: ["heelside", "toeside", "unknown"] }).notNull().default("unknown"),
   status: text("status", { enum: ["draft", "processing", "completed", "failed"] }).notNull().default("draft"),
   ...timestamps,
 }, (table) => [index("sessions_progression_idx").on(table.progressionId)]);
@@ -135,6 +137,7 @@ export const comparisonEvidence = sqliteTable("comparison_evidence", {
   id: text("id").primaryKey(),
   analysisRunId: text("analysis_run_id").notNull().references(() => analysisRuns.id, { onDelete: "cascade" }),
   metricId: text("metric_id").notNull(),
+  edgeType: text("edge_type", { enum: ["heelside", "toeside", "unknown"] }).notNull().default("unknown"),
   rank: integer("rank").notNull(),
   confidence: real("confidence").notNull(),
   effectSize: real("effect_size").notNull(),

@@ -13,7 +13,7 @@ class ApiTests(unittest.TestCase):
         response = TestClient(app).get("/health")
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json()["status"], "ok")
-        self.assertEqual(response.json()["pipeline_version"], "video-intelligence-v0.5")
+        self.assertEqual(response.json()["pipeline_version"], "video-intelligence-v0.6")
 
     def test_ready_checks_runtime_dependencies(self):
         with patch("snowtrace_analysis.api.shutil.which", return_value="/usr/bin/tool"):
@@ -48,8 +48,8 @@ class ApiTests(unittest.TestCase):
             rider_view_angle="side",
             reference_stance="goofy",
             rider_stance="regular",
-            reference={"source_url": "https://example.com/reference.mp4"},
-            rider={"source_url": "https://example.com/rider.mp4"},
+            reference={"source_url": "https://example.com/reference.mp4", "first_edge": "toeside"},
+            rider={"source_url": "https://example.com/rider.mp4", "first_edge": "heelside"},
         )
         reference_result = MagicMock(status="needs_rider", proxy_path=Path("reference-proxy.mp4"))
         rider_result = MagicMock(status="completed", proxy_path=Path("rider-proxy.mp4"))
@@ -71,6 +71,8 @@ class ApiTests(unittest.TestCase):
         self.assertEqual(pipeline.analyze_video.call_args_list[1].kwargs["camera_mode"], "fixed")
         self.assertEqual(pipeline.analyze_video.call_args_list[0].kwargs["view_angle"], "side")
         self.assertEqual(pipeline.analyze_video.call_args_list[1].kwargs["view_angle"], "side")
+        self.assertEqual(pipeline.analyze_video.call_args_list[0].kwargs["first_edge"], "toeside")
+        self.assertEqual(pipeline.analyze_video.call_args_list[1].kwargs["first_edge"], "heelside")
 
     def test_pair_contract_rejects_mismatched_views_before_analysis(self):
         response = TestClient(app).post(

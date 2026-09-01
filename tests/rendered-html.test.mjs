@@ -69,6 +69,10 @@ test("renders capture guidance and context controls", async () => {
   assert.match(html, /Reference view/);
   assert.match(html, /Your stance/);
   assert.match(html, /Reference stance/);
+  assert.match(html, /Your first turn/);
+  assert.match(html, /Reference first turn/);
+  assert.match(html, /Choose edge/);
+  assert.match(html, /pair heelside with heelside and toeside with toeside/);
   assert.match(html, /Regular/);
   assert.match(html, /Goofy/);
 });
@@ -119,6 +123,8 @@ test("does not create a valid session while the analysis worker is offline", asy
     referenceViewAngle: "three-quarter",
     stance: "regular",
     referenceStance: "regular",
+    firstEdge: "heelside",
+    referenceFirstEdge: "toeside",
     videos,
   };
   const mismatch = await fetchBuiltApp(new Request("http://localhost/api/sessions", {

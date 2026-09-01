@@ -11,8 +11,11 @@ type ProgressRow = {
   reference_view_angle: "three-quarter" | "side" | "front-rear";
   rider_stance: "regular" | "goofy";
   reference_stance: "regular" | "goofy";
+  rider_first_edge: "heelside" | "toeside" | "unknown";
+  reference_first_edge: "heelside" | "toeside" | "unknown";
   recorded_at: string;
   metric_id: string;
+  edge_type: "heelside" | "toeside" | "unknown";
   phase: "initiation" | "shaping" | "apex" | "completion";
   confidence: number;
   evidence_json: string;
@@ -43,8 +46,11 @@ export async function POST(request: Request) {
        sessions.reference_view_angle,
        sessions.rider_stance,
        sessions.reference_stance,
+       sessions.rider_first_edge,
+       sessions.reference_first_edge,
        sessions.created_at AS recorded_at,
        comparison_evidence.metric_id,
+       comparison_evidence.edge_type,
        comparison_evidence.phase,
        comparison_evidence.confidence,
        comparison_evidence.evidence_json,
@@ -82,8 +88,11 @@ export async function POST(request: Request) {
         referenceViewAngle: row.reference_view_angle,
         riderStance: row.rider_stance,
         referenceStance: row.reference_stance,
+        riderFirstEdge: row.rider_first_edge,
+        referenceFirstEdge: row.reference_first_edge,
         recordedAt: row.recorded_at,
         metricId: row.metric_id,
+        edgeType: row.edge_type,
         phase: row.phase,
         difference: evidence.difference,
         unit: evidence.unit,
@@ -107,7 +116,10 @@ export async function POST(request: Request) {
         candidate.referenceViewAngle === item.referenceViewAngle &&
         candidate.riderStance === item.riderStance &&
         candidate.referenceStance === item.referenceStance &&
+        candidate.riderFirstEdge === item.riderFirstEdge &&
+        candidate.referenceFirstEdge === item.referenceFirstEdge &&
         candidate.metricId === item.metricId &&
+        candidate.edgeType === item.edgeType &&
         candidate.phase === item.phase &&
         candidate.unit === item.unit)
       : null;
@@ -115,6 +127,7 @@ export async function POST(request: Request) {
       goal: item.goal,
       recordedAt: item.recordedAt,
       metricId: item.metricId,
+      edgeType: item.edgeType,
       phase: item.phase,
       difference: item.difference,
       unit: item.unit,

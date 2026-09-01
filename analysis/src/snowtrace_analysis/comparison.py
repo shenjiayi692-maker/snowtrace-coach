@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from collections import defaultdict
-
 import numpy as np
 
 from .contracts import ComparisonEvidence, MetricSeries, PoseSnapshot, RiderTrack, Turn, VideoAnalysisResult
@@ -45,17 +43,19 @@ def compare_videos(reference: VideoAnalysisResult, rider: VideoAnalysisResult) -
     for metric_id in sorted(allowed & reference_metrics.keys() & rider_metrics.keys()):
         if metric_id not in MINIMUM_MEANINGFUL_DIFFERENCE:
             continue
-        item = _compare_metric(
-            reference_metrics[metric_id],
-            rider_metrics[metric_id],
-            reference.turns,
-            rider.turns,
-            MINIMUM_MEANINGFUL_DIFFERENCE[metric_id],
-        )
-        if item and item.confidence >= 0.70 and item.effect_size >= 1.0 and item.paired_turns >= 2:
-            item.reference_pose = _pose_snapshot(reference.selected_track, item.reference_timestamp_ms)
-            item.user_pose = _pose_snapshot(rider.selected_track, item.user_timestamp_ms)
-            evidence.append(item)
+        for edge_type in ("heelside", "toeside"):
+            item = _compare_metric(
+                reference_metrics[metric_id],
+                rider_metrics[metric_id],
+                reference.turns,
+                rider.turns,
+                MINIMUM_MEANINGFUL_DIFFERENCE[metric_id],
+                edge_type,
+            )
+            if item and item.confidence >= 0.70 and item.effect_size >= 1.0 and item.paired_turns >= 2:
+                item.reference_pose = _pose_snapshot(reference.selected_track, item.reference_timestamp_ms)
+                item.user_pose = _pose_snapshot(rider.selected_track, item.user_timestamp_ms)
+                evidence.append(item)
 
     evidence.sort(key=lambda item: item.effect_size * item.confidence, reverse=True)
     for index, item in enumerate(evidence, start=1):
@@ -69,8 +69,9 @@ def _compare_metric(
     reference_turns: list[Turn],
     rider_turns: list[Turn],
     threshold: float,
+    edge_type: str,
 ) -> ComparisonEvidence | None:
-    pairs = _pair_turns(reference_turns, rider_turns)
+    pairs = _pair_turns(reference_turns, rider_turns, edge_type)
     reference_curves: list[np.ndarray] = []
     rider_curves: list[np.ndarray] = []
     usable_pairs: list[tuple[Turn, Turn]] = []
@@ -115,6 +116,7 @@ def _compare_metric(
     return ComparisonEvidence(
         metric_id=reference.metric_id,
         rank=0,
+        edge_type=edge_type,  # type: ignore[arg-type]
         phase=best_phase,  # type: ignore[arg-type]
         reference_value=round(float(reference_template[best_index]), 5),
         user_value=round(float(rider_template[best_index]), 5),
@@ -128,17 +130,14 @@ def _compare_metric(
     )
 
 
-def _pair_turns(reference_turns: list[Turn], rider_turns: list[Turn]) -> list[tuple[Turn, Turn]]:
-    reference_by_edge: dict[str, list[Turn]] = defaultdict(list)
-    rider_by_edge: dict[str, list[Turn]] = defaultdict(list)
-    for turn in reference_turns:
-        reference_by_edge[turn.edge_type].append(turn)
-    for turn in rider_turns:
-        rider_by_edge[turn.edge_type].append(turn)
-    pairs: list[tuple[Turn, Turn]] = []
-    for edge in ("heelside", "toeside", "unknown"):
-        pairs.extend(zip(reference_by_edge[edge], rider_by_edge[edge]))
-    return pairs
+def _pair_turns(
+    reference_turns: list[Turn],
+    rider_turns: list[Turn],
+    edge_type: str,
+) -> list[tuple[Turn, Turn]]:
+    reference_edge = [turn for turn in reference_turns if turn.edge_type == edge_type]
+    rider_edge = [turn for turn in rider_turns if turn.edge_type == edge_type]
+    return list(zip(reference_edge, rider_edge))
 
 
 def _resample_turn(series: MetricSeries, turn: Turn) -> np.ndarray | None:

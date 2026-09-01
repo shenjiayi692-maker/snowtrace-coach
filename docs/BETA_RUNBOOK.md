@@ -35,9 +35,11 @@ group.
 ## Rider protocol
 
 1. Rider selects one reference clip and one recent clip of their own.
-2. Rider records goal, each rider's stance, and each clip's camera mode and
-   view. Do not assume the reference uses the user's stance or camera mode. The
-   beta requires both clips to use the same declared view category.
+2. Rider records goal, each rider's stance, each clip's camera mode and view,
+   and whether the first complete turn visible in each clip is heelside or
+   toeside. Do not assume the reference uses the user's stance, camera mode, or
+   starting edge. The beta requires both clips to use the same declared view
+   category.
 3. Snowtrace runs browser preflight, upload, pose quality, rider selection when
    necessary, turn alignment, and confidence filtering.
 4. If accepted, rider opens Show Me before reading the possible explanation.
@@ -45,9 +47,10 @@ group.
    after scrubbing away from that moment.
 5. Rider reads one drill and submits the three in-product feedback answers.
 6. Within 3–7 days, invite the rider to film the same goal again after trying
-   the drill. Ask them to reuse the same reference clip and both camera contexts when
-   they want a visible-gap comparison. Record whether they upload a second
-   complete pair; do not count verbal intent as retention.
+   the drill. Ask them to reuse the same reference clip, both camera contexts,
+   and the same first-turn labels when they want a visible-gap comparison.
+   Record whether they upload a second complete pair; do not count verbal intent
+   as retention.
 7. Conduct a 15-minute interview after the product task.
 
 Interview prompts:
@@ -106,8 +109,8 @@ completed run can legitimately contain no reliable evidence and no report.
 The upload page shows at most three recent evidence-backed gaps for the
 anonymous device identity. It computes a directional gap change only when the
 reference file fingerprint, goal, both camera modes, both views, rider stance,
-reference stance, metric, phase, and unit all match a prior record. Label this
-as movement relative to one reference, never
+reference stance, both first-turn labels, metric, edge type, phase, and unit all
+match a prior record. Label this as movement relative to one reference, never
 as skill, certification level, or proof that technique improved. A different
 reference or filming context starts a new baseline.
 
@@ -176,6 +179,13 @@ camera modes may differ, but each clip keeps its own mode and the resulting
 metric set is the intersection of both quality gates. Front/rear footage must
 not emit sagittal knee or fore/aft evidence; side footage must not emit the
 foreshortened shoulder/pelvis separation metric.
+
+For edge-alignment audits, record the first complete turn independently for
+both clips, including a pair that begins on opposite edges. Confirm every
+accepted evidence item pairs heelside only with heelside or toeside only with
+toeside, contains its edge type, and points Show Me to that same edge and phase.
+An unknown edge or fewer than two usable turns on the same edge must produce no
+coaching evidence rather than fall back to sequential cross-edge pairing.
 
 ## Go / no-go logic
 

@@ -31,8 +31,9 @@ analysis service.
 - Separate reference/rider camera modes plus an explicit same-view compatibility
   gate; side and front/rear footage receive different metric allowlists rather
   than pretending all 2D measurements survive every perspective
-- Turn segmentation, phase normalization, confidence-aware metric comparison,
-  and strict evidence thresholds
+- Explicit first-turn edge labels, alternating turn segmentation, same-edge
+  phase normalization, confidence-aware metric comparison, and strict evidence
+  thresholds; opposite edges are never ranked as a coaching difference
 - Separate rider and reference stance snapshots so lead/trail knee labels and
   the normalized fore/aft axis remain anatomical for both regular and goofy
   riders instead of silently treating left as lead
@@ -46,8 +47,8 @@ analysis service.
   metrics remain correct after video expiry and do not count no-evidence runs
   as completed reports
 - Anonymous, D1-backed visible-gap history that compares sessions only when the
-  reference fingerprint, goal, both camera contexts, both stances, metric,
-  phase, and unit match;
+  reference fingerprint, goal, both camera contexts, both stances, both
+  first-turn labels, metric, edge, phase, and unit match;
   it is explicitly not presented as a riding score
 
 The MVP is snowboard carving only. It does not claim force, pressure, exact
@@ -110,7 +111,9 @@ Validation:
 
 The pair-analysis endpoint accepts short-lived HTTPS download URLs, optional
 short-lived proxy upload URLs, per-video camera mode and stance, a shared
-declared view, initial edge labels, and optional selected rider track IDs.
+declared view, a required first-complete-turn edge label for each clip, and
+optional selected rider track IDs. Edge labels keep heelside turns paired only
+with heelside turns and toeside turns paired only with toeside turns.
 `SNOWTRACE_SOURCE_HOSTS` can restrict accepted source
 hosts in production. `/v1/jobs` adds an authenticated asynchronous wrapper and
 delivers the quality-gated result to an allowlisted HTTPS callback.

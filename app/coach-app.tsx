@@ -103,6 +103,7 @@ type ProgressHistoryItem = {
   goal: Goal;
   recordedAt: string;
   metricId: string;
+  edgeType: "heelside" | "toeside" | "unknown";
   phase: TurnPhase;
   difference: number;
   unit: string;
@@ -615,6 +616,8 @@ export function CoachApp() {
   const [referenceView, setReferenceView] = useState("three-quarter");
   const [stance, setStance] = useState("regular");
   const [referenceStance, setReferenceStance] = useState("regular");
+  const [firstEdge, setFirstEdge] = useState("");
+  const [referenceFirstEdge, setReferenceFirstEdge] = useState("");
   const [adultAndRightsConfirmed, setAdultAndRightsConfirmed] = useState(false);
   const [retentionAcknowledged, setRetentionAcknowledged] = useState(false);
   const [activeStage, setActiveStage] = useState(0);
@@ -855,6 +858,8 @@ export function CoachApp() {
     reference &&
     rider &&
     !busyRole &&
+    firstEdge &&
+    referenceFirstEdge &&
     adultAndRightsConfirmed &&
     retentionAcknowledged,
   );
@@ -901,6 +906,8 @@ export function CoachApp() {
       !referenceFile ||
       !riderFile ||
       !viewsCompatible ||
+      !firstEdge ||
+      !referenceFirstEdge ||
       !adultAndRightsConfirmed ||
       !retentionAcknowledged
     ) return;
@@ -934,6 +941,8 @@ export function CoachApp() {
           referenceViewAngle: referenceView,
           stance,
           referenceStance,
+          firstEdge,
+          referenceFirstEdge,
           videos: [
             { inspection: reference, file: referenceFile },
             { inspection: rider, file: riderFile },
@@ -1233,6 +1242,16 @@ export function CoachApp() {
                 options={[{ value: "regular", label: "Regular" }, { value: "goofy", label: "Goofy" }]}
               />
               <ContextSelector
+                label="Your first turn"
+                value={firstEdge}
+                onChange={setFirstEdge}
+                options={[
+                  { value: "", label: "Choose edge" },
+                  { value: "heelside", label: "Heelside" },
+                  { value: "toeside", label: "Toeside" },
+                ]}
+              />
+              <ContextSelector
                 label="Reference camera"
                 value={referenceCamera}
                 onChange={setReferenceCamera}
@@ -1254,7 +1273,20 @@ export function CoachApp() {
                 onChange={setReferenceStance}
                 options={[{ value: "regular", label: "Regular" }, { value: "goofy", label: "Goofy" }]}
               />
+              <ContextSelector
+                label="Reference first turn"
+                value={referenceFirstEdge}
+                onChange={setReferenceFirstEdge}
+                options={[
+                  { value: "", label: "Choose edge" },
+                  { value: "heelside", label: "Heelside" },
+                  { value: "toeside", label: "Toeside" },
+                ]}
+              />
             </div>
+            <p className="context-help">
+              First turn means the first complete turn visible after the rider enters frame. Snowtrace uses it only to pair heelside with heelside and toeside with toeside.
+            </p>
 
             <fieldset className="consent-card">
               <legend>Before uploading</legend>
@@ -1294,9 +1326,9 @@ export function CoachApp() {
             {progressHistory.length ? (
               <div className="progress-history-grid">
                 {progressHistory.slice(0, 3).map((item) => (
-                  <article key={`${item.recordedAt}-${item.metricId}-${item.phase}`}>
+                  <article key={`${item.recordedAt}-${item.metricId}-${item.edgeType}-${item.phase}`}>
                     <div>
-                      <span>{goalCopy[item.goal].label} · {item.phase}</span>
+                      <span>{goalCopy[item.goal].label} · {item.edgeType} {item.phase}</span>
                       <time dateTime={item.recordedAt}>{new Date(item.recordedAt).toLocaleDateString(undefined, { month: "short", day: "numeric" })}</time>
                     </div>
                     <h3>{progressMetricLabels[item.metricId] ?? "Visible movement gap"}</h3>
@@ -1308,7 +1340,7 @@ export function CoachApp() {
             ) : (
               <p className="progress-empty">Your first accepted comparison will become the baseline for a future like-for-like run.</p>
             )}
-            <small>Same reference, goal, both camera modes, shared view, both stances, metric and turn phase required. Filming differences can still affect 2D pose.</small>
+            <small>Same reference, goal, both camera modes, shared view, both stances, both first-turn labels, metric, edge and turn phase required. Filming differences can still affect 2D pose.</small>
           </section>
         </div>
       )}
@@ -1566,7 +1598,7 @@ export function CoachApp() {
                 <div>
                   <span>Reference</span>
                   <strong>{formatEvidenceValue(realEvidence.details.reference_value, realEvidence.details.unit)}</strong>
-                  <small>{realEvidence.phase}</small>
+                  <small>{realEvidence.edge_type} · {realEvidence.phase}</small>
                 </div>
                 <div className="difference-arrow">→ <b>{realEvidence.details.difference > 0 ? "+" : ""}{formatEvidenceValue(realEvidence.details.difference, realEvidence.details.unit)}</b></div>
                 <div>
@@ -1582,12 +1614,12 @@ export function CoachApp() {
             <div className="compare-toolbar">
               <div>
                 <span className="eyebrow">SHOW ME WHERE</span>
-                <h2>One paired turn. Exact evidence phase.</h2>
+                <h2>One same-edge comparison. Exact evidence phase.</h2>
               </div>
               <div className="moment-tabs" role="tablist" aria-label="Turn phase">
                 {[realEvidence.phase].map((moment) => (
                   <button type="button" role="tab" aria-selected={activeMoment === moment} className={activeMoment === moment ? "active" : ""} onClick={() => { setActiveMoment(moment); void recordBetaEvent("show_me_clicked"); window.setTimeout(seekEvidence, 0); }} key={moment}>
-                    {moment}
+                    {realEvidence.edge_type} · {moment}
                   </button>
                 ))}
               </div>

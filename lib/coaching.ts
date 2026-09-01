@@ -7,6 +7,7 @@ export type PoseSnapshot = {
 
 export type EvidenceSnapshot = {
   metric_id: string;
+  edge_type: "heelside" | "toeside";
   rank: number;
   confidence: number;
   effect_size: number;
@@ -75,14 +76,14 @@ function magnitude(value: number, unit: string) {
 export function buildCoachingView(evidence: EvidenceSnapshot): CoachingView {
   const difference = evidence.details.difference;
   const amount = magnitude(difference, evidence.details.unit);
-  const phase = evidence.phase;
+  const moment = `${evidence.edge_type} ${evidence.phase}`;
 
   if (evidence.metric_id === "knee_flexion_lead" || evidence.metric_id === "knee_flexion_trail") {
     const side = evidence.metric_id.endsWith("lead") ? "lead" : "trail";
     const relation = difference > 0 ? "straighter" : "more flexed";
     return {
       metricLabel: `${side} knee angle`,
-      title: `Your ${side} knee is ${relation} than the reference near ${phase}.`,
+      title: `Your ${side} knee is ${relation} than the reference near ${moment}.`,
       explanation: `The visible knee angle differs by ${amount} across ${evidence.details.paired_turns} paired turns. You may be changing flexion range or timing here; the video cannot establish force or pressure.`,
       drill: progressiveFlexion,
     };
@@ -90,7 +91,7 @@ export function buildCoachingView(evidence: EvidenceSnapshot): CoachingView {
   if (evidence.metric_id === "pelvis_height") {
     return {
       metricLabel: "normalized pelvis height",
-      title: `Your pelvis appears ${difference > 0 ? "higher" : "lower"} than the reference near ${phase}.`,
+      title: `Your pelvis appears ${difference > 0 ? "higher" : "lower"} than the reference near ${moment}.`,
       explanation: `The 2D pelvis-to-ankle distance differs by ${amount}, normalized to torso length. This may reflect a different flexion pattern, but it is not a center-of-mass or pressure measurement.`,
       drill: progressiveFlexion,
     };
@@ -98,7 +99,7 @@ export function buildCoachingView(evidence: EvidenceSnapshot): CoachingView {
   if (evidence.metric_id === "fore_aft_pelvis") {
     return {
       metricLabel: "projected fore/aft pelvis position",
-      title: `Your projected pelvis position differs most near ${phase}.`,
+      title: `Your projected pelvis position differs most near ${moment}.`,
       explanation: `The visible pelvis projection differs by ${amount}. Foreshortening and board direction can affect this 2D signal, so treat it as a movement cue rather than a balance diagnosis.`,
       drill: centeredCorridor,
     };
@@ -106,7 +107,7 @@ export function buildCoachingView(evidence: EvidenceSnapshot): CoachingView {
   if (evidence.metric_id === "upper_lower_separation") {
     return {
       metricLabel: "upper/lower body separation",
-      title: `Your shoulder-to-pelvis alignment differs most near ${phase}.`,
+      title: `Your shoulder-to-pelvis alignment differs most near ${moment}.`,
       explanation: `The projected axis difference is ${amount} from the reference pattern. You may be using a different torso rotation strategy; the single camera view cannot determine torque.`,
       drill: quietTorso,
     };
@@ -114,14 +115,14 @@ export function buildCoachingView(evidence: EvidenceSnapshot): CoachingView {
   if (evidence.metric_id === "lead_trail_differential") {
     return {
       metricLabel: "lead/trail knee differential",
-      title: `Your lead-to-trail knee relationship differs most near ${phase}.`,
+      title: `Your lead-to-trail knee relationship differs most near ${moment}.`,
       explanation: `The visible difference between the two knee angles changes by ${amount}. This may reflect asymmetrical flexion, but occlusion and camera view remain possible contributors.`,
       drill: progressiveFlexion,
     };
   }
   return {
     metricLabel: "projected body inclination",
-    title: `Your projected body line differs most near ${phase}.`,
+    title: `Your projected body line differs most near ${moment}.`,
     explanation: `The 2D body-line angle differs by ${amount} across ${evidence.details.paired_turns} paired turns. This is a screen-plane comparison, not a true edge-angle or 3D inclination estimate.`,
     drill: quietTorso,
   };

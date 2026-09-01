@@ -15,12 +15,18 @@ from snowtrace_analysis.contracts import (
 )
 
 
-def result(role: str, knee_offset: float, view_angle: str = "three-quarter") -> VideoAnalysisResult:
+def result(
+    role: str,
+    knee_offset: float,
+    view_angle: str = "three-quarter",
+    *,
+    edges_known: bool = True,
+) -> VideoAnalysisResult:
     turns = [
-        Turn(0, "heelside", 0, 500, 1000, 0.95),
-        Turn(1, "toeside", 1000, 1500, 2000, 0.95),
-        Turn(2, "heelside", 2000, 2500, 3000, 0.95),
-        Turn(3, "toeside", 3000, 3500, 4000, 0.95),
+        Turn(0, "heelside" if edges_known else "unknown", 0, 500, 1000, 0.95),
+        Turn(1, "toeside" if edges_known else "unknown", 1000, 1500, 2000, 0.95),
+        Turn(2, "heelside" if edges_known else "unknown", 2000, 2500, 3000, 0.95),
+        Turn(3, "toeside" if edges_known else "unknown", 3000, 3500, 4000, 0.95),
     ]
     timestamps = list(range(0, 4001, 50))
     values = [120.0 + knee_offset for _ in timestamps]
@@ -58,10 +64,11 @@ def result(role: str, knee_offset: float, view_angle: str = "three-quarter") -> 
 class ComparisonTests(unittest.TestCase):
     def test_ranks_consistent_meaningful_difference(self):
         evidence = compare_videos(result("reference", 0), result("rider", 12))
-        self.assertEqual(len(evidence), 1)
+        self.assertEqual(len(evidence), 2)
         self.assertEqual(evidence[0].metric_id, "knee_flexion_lead")
+        self.assertEqual({item.edge_type for item in evidence}, {"heelside", "toeside"})
         self.assertEqual(evidence[0].rank, 1)
-        self.assertEqual(evidence[0].paired_turns, 4)
+        self.assertEqual(evidence[0].paired_turns, 2)
         self.assertGreaterEqual(evidence[0].confidence, 0.7)
         self.assertIsNotNone(evidence[0].reference_pose)
         self.assertIsNotNone(evidence[0].user_pose)
@@ -75,6 +82,13 @@ class ComparisonTests(unittest.TestCase):
     def test_rejects_different_declared_views(self):
         with self.assertRaisesRegex(ComparisonError, "same declared view"):
             compare_videos(result("reference", 0, "side"), result("rider", 12, "three-quarter"))
+
+    def test_unknown_edges_are_not_paired_by_sequence(self):
+        evidence = compare_videos(
+            result("reference", 0, edges_known=False),
+            result("rider", 12, edges_known=False),
+        )
+        self.assertEqual(evidence, [])
 
 
 if __name__ == "__main__":

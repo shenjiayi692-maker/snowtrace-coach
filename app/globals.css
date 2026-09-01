@@ -560,7 +560,7 @@ input:focus-visible {
 
 .context-row {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   border: 1px solid var(--line);
   margin-top: 14px;
 }
@@ -574,12 +574,19 @@ input:focus-visible {
   border-right: 0;
 }
 
-.context-field:nth-child(3n) {
+.context-field:nth-child(4n) {
   border-right: 0;
 }
 
-.context-field:nth-child(n + 4) {
+.context-field:nth-child(n + 5) {
   border-top: 1px solid var(--line);
+}
+
+.context-help {
+  margin: 8px 0 0;
+  color: var(--muted);
+  font-size: 0.72rem;
+  line-height: 1.45;
 }
 
 .context-field > span {
@@ -1919,7 +1926,7 @@ input:focus-visible {
     border-bottom: 1px solid var(--line);
   }
 
-  .context-field:nth-child(n + 4) {
+  .context-field:nth-child(n + 5) {
     border-top: 0;
   }
 

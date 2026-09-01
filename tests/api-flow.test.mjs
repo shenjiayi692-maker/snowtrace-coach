@@ -164,6 +164,8 @@ test("creates, uploads, queues, reads and deletes a real analysis session", asyn
       referenceViewAngle: "three-quarter",
       stance: "regular",
       referenceStance: "goofy",
+      firstEdge: "heelside",
+      referenceFirstEdge: "toeside",
       videos: [
         {
           role: "reference",
@@ -199,10 +201,12 @@ test("creates, uploads, queues, reads and deletes a real analysis session", asyn
     "beta-consent-v1",
   );
   const storedStances = database.prepare(
-    "SELECT rider_stance, reference_stance, camera_mode, view_angle, reference_camera_mode, reference_view_angle FROM sessions WHERE id = ?",
+    "SELECT rider_stance, reference_stance, rider_first_edge, reference_first_edge, camera_mode, view_angle, reference_camera_mode, reference_view_angle FROM sessions WHERE id = ?",
   ).get(created.sessionId);
   assert.equal(storedStances.rider_stance, "regular");
   assert.equal(storedStances.reference_stance, "goofy");
+  assert.equal(storedStances.rider_first_edge, "heelside");
+  assert.equal(storedStances.reference_first_edge, "toeside");
   assert.equal(storedStances.camera_mode, "fixed");
   assert.equal(storedStances.view_angle, "three-quarter");
   assert.equal(storedStances.reference_camera_mode, "follow");
@@ -251,6 +255,8 @@ test("creates, uploads, queues, reads and deletes a real analysis session", asyn
   assert.equal(analysisRequests.at(-1).reference_camera_mode, "follow");
   assert.equal(analysisRequests.at(-1).rider_view_angle, "three-quarter");
   assert.equal(analysisRequests.at(-1).reference_view_angle, "three-quarter");
+  assert.equal(analysisRequests.at(-1).rider.first_edge, "heelside");
+  assert.equal(analysisRequests.at(-1).reference.first_edge, "toeside");
 
   const expires = Math.floor(Date.now() / 1000) + 60;
   const referenceVideo = created.videos.find((video) => video.role === "reference");
@@ -317,6 +323,7 @@ test("creates, uploads, queues, reads and deletes a real analysis session", asyn
       rider: { status: "completed" },
       evidence: [{
         metric_id: "knee_flexion_lead",
+        edge_type: "heelside",
         rank: 1,
         phase: "apex",
         reference_value: 44,
@@ -342,6 +349,7 @@ test("creates, uploads, queues, reads and deletes a real analysis session", asyn
   const status = await statusResponse.json();
   assert.equal(status.run.status, "completed");
   assert.equal(status.evidence[0].metric_id, "knee_flexion_lead");
+  assert.equal(status.evidence[0].edge_type, "heelside");
   assert.equal(status.evidence[0].details.reference_pose.landmarks.length, 33);
   assert.equal(status.evidence[0].details.reference_pose.timestamp_ms, 8400);
   assert.equal("z" in status.evidence[0].details.reference_pose.landmarks[0], false);
@@ -359,6 +367,7 @@ test("creates, uploads, queues, reads and deletes a real analysis session", asyn
   assert.equal(progress.history.length, 1);
   assert.equal(progress.history[0].goal, "medium");
   assert.equal(progress.history[0].metricId, "knee_flexion_lead");
+  assert.equal(progress.history[0].edgeType, "heelside");
   assert.equal(progress.history[0].gapChange, null);
   assert.equal("referenceFingerprint" in progress.history[0], false);
   assert.equal("sessionId" in progress.history[0], false);
@@ -575,8 +584,9 @@ test("computes a visible-gap trend only for matching reference and capture conte
     ).run(progressionId, "pro_progress", videoId, record.date, record.date);
     database.prepare(
       `INSERT INTO sessions
-        (id, progression_id, camera_mode, view_angle, reference_camera_mode, reference_view_angle, rider_stance, reference_stance, status, created_at, updated_at)
-       VALUES (?, ?, 'fixed', 'three-quarter', ?, 'three-quarter', ?, ?, 'completed', ?, ?)`,
+        (id, progression_id, camera_mode, view_angle, reference_camera_mode, reference_view_angle, rider_stance, reference_stance,
+         rider_first_edge, reference_first_edge, status, created_at, updated_at)
+       VALUES (?, ?, 'fixed', 'three-quarter', ?, 'three-quarter', ?, ?, 'heelside', 'toeside', 'completed', ?, ?)`,
     ).run(
       sessionId,
       progressionId,
@@ -598,8 +608,8 @@ test("computes a visible-gap trend only for matching reference and capture conte
     ).run(runId, sessionId, record.date, record.date);
     database.prepare(
       `INSERT INTO comparison_evidence
-        (id, analysis_run_id, metric_id, rank, confidence, effect_size, phase, user_timestamp_ms, reference_timestamp_ms, evidence_json)
-       VALUES (?, ?, 'knee_flexion_lead', 1, 0.86, 1.7, 'apex', 6000, 7000, ?)`,
+        (id, analysis_run_id, metric_id, edge_type, rank, confidence, effect_size, phase, user_timestamp_ms, reference_timestamp_ms, evidence_json)
+       VALUES (?, ?, 'knee_flexion_lead', 'heelside', 1, 0.86, 1.7, 'apex', 6000, 7000, ?)`,
     ).run(`ev_progress_${record.index}`, runId, JSON.stringify({
       reference_value: 45,
       user_value: 45 + record.difference,
@@ -618,6 +628,7 @@ test("computes a visible-gap trend only for matching reference and capture conte
   const progress = await response.json();
   assert.equal(progress.history.length, 4);
   assert.equal(progress.history[0].difference, 9);
+  assert.equal(progress.history[0].edgeType, "heelside");
   assert.equal(progress.history[0].gapChange, null);
   assert.equal(progress.history[1].difference, 12);
   assert.equal(progress.history[1].gapChange, 8);
@@ -640,7 +651,7 @@ test("reports worker availability without exposing runtime secrets", async () =>
   assert.deepEqual(status, {
     analysisAvailable: true,
     productScope: "snowboard_carving",
-    pipelineVersion: "video-intelligence-v0.5",
+    pipelineVersion: "video-intelligence-v0.6",
   });
   assert.equal(JSON.stringify(status).includes("callback-test-token"), false);
 
@@ -661,6 +672,8 @@ test("requires the current video consent before creating a session", async () =>
       referenceViewAngle: "three-quarter",
       stance: "regular",
       referenceStance: "regular",
+      firstEdge: "heelside",
+      referenceFirstEdge: "toeside",
       videos: [],
     }),
   });

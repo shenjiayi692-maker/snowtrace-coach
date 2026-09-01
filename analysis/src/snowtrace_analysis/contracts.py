@@ -120,7 +120,7 @@ class VideoAnalysisResult:
     metrics: list[MetricSeries]
     status: Literal["needs_rider", "rejected", "completed"]
     selected_track: RiderTrack | None = field(default=None, repr=False)
-    pipeline_version: str = "video-intelligence-v0.5"
+    pipeline_version: str = "video-intelligence-v0.6"
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -145,6 +145,7 @@ class VideoAnalysisResult:
 class ComparisonEvidence:
     metric_id: str
     rank: int
+    edge_type: Literal["heelside", "toeside"]
     phase: Literal["initiation", "shaping", "apex", "completion"]
     reference_value: float
     user_value: float
