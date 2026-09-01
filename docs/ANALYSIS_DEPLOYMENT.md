@@ -68,7 +68,10 @@ Before inviting riders:
    terminal states: rider selection, recapture, no reliable gap, or evidence.
 4. For evidence, confirm every result declares `heelside` or `toeside`, both
    source clips seek to that same edge and phase, and the skeleton appears only
-   while each player is near its evidence frame.
+   while each player is near its evidence frame. Use one asymmetric turn and
+   confirm its detected apex is the 50% normalization anchor; verify the shown
+   pair is closest to the median accepted gap rather than whichever turn happens
+   to be in the middle of the clip.
 5. Delete the session and confirm it is no longer readable.
 6. Run the retention operation against a deliberately expired test object and
    confirm both the source and proxy objects are absent afterward.

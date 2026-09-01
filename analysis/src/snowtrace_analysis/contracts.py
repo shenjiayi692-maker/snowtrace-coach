@@ -10,6 +10,8 @@ VideoRole = Literal["reference", "rider"]
 CameraMode = Literal["fixed", "follow"]
 ViewAngle = Literal["three-quarter", "side", "front-rear"]
 EdgeType = Literal["heelside", "toeside", "unknown"]
+ComparableEdge = Literal["heelside", "toeside"]
+TurnPhase = Literal["initiation", "shaping", "apex", "completion"]
 Stance = Literal["regular", "goofy"]
 QualityStatus = Literal["full", "limited", "rejected"]
 
@@ -120,7 +122,7 @@ class VideoAnalysisResult:
     metrics: list[MetricSeries]
     status: Literal["needs_rider", "rejected", "completed"]
     selected_track: RiderTrack | None = field(default=None, repr=False)
-    pipeline_version: str = "video-intelligence-v0.6"
+    pipeline_version: str = "video-intelligence-v0.7"
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -145,8 +147,8 @@ class VideoAnalysisResult:
 class ComparisonEvidence:
     metric_id: str
     rank: int
-    edge_type: Literal["heelside", "toeside"]
-    phase: Literal["initiation", "shaping", "apex", "completion"]
+    edge_type: ComparableEdge
+    phase: TurnPhase
     reference_value: float
     user_value: float
     difference: float

@@ -187,6 +187,13 @@ toeside, contains its edge type, and points Show Me to that same edge and phase.
 An unknown edge or fewer than two usable turns on the same edge must produce no
 coaching evidence rather than fall back to sequential cross-edge pairing.
 
+For phase-alignment audits, include turns with visibly different initiation-to-
+apex and apex-to-completion durations. Confirm each detected apex maps to 50%
+normalized progress and that the Show Me pair is the same-edge pair closest to
+the median accepted gap—not simply the middle turn in the clip. Do not add DTW
+until beta evidence shows that apex-anchored piecewise normalization is
+insufficient.
+
 ## Go / no-go logic
 
 Go to the next product iteration only if there are no material misleading

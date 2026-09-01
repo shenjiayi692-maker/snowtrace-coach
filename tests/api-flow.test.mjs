@@ -651,7 +651,7 @@ test("reports worker availability without exposing runtime secrets", async () =>
   assert.deepEqual(status, {
     analysisAvailable: true,
     productScope: "snowboard_carving",
-    pipelineVersion: "video-intelligence-v0.6",
+    pipelineVersion: "video-intelligence-v0.7",
   });
   assert.equal(JSON.stringify(status).includes("callback-test-token"), false);
 

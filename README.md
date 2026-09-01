@@ -32,13 +32,15 @@ analysis service.
   gate; side and front/rear footage receive different metric allowlists rather
   than pretending all 2D measurements survive every perspective
 - Explicit first-turn edge labels, alternating turn segmentation, same-edge
-  phase normalization, confidence-aware metric comparison, and strict evidence
-  thresholds; opposite edges are never ranked as a coaching difference
+  phase normalization anchored to each detected apex, confidence-aware metric
+  comparison, and strict evidence thresholds; opposite edges are never ranked
+  as a coaching difference
 - Separate rider and reference stance snapshots so lead/trail knee labels and
   the normalized fore/aft axis remain anatomical for both regular and goofy
   riders instead of silently treating left as lead
 - Evidence-frame pose snapshots rendered as synchronized skeleton overlays in
-  the Show Me comparison; whole-video landmark streams are not sent to the web
+  the Show Me comparison; the displayed turn pair is the one closest to the
+  median accepted gap, and whole-video landmark streams are not sent to the web
 - D1 schema for sessions, videos, tracks, turns, metrics, evidence, reports,
   drills, progression, and feedback; R2 binding reserved for source/proxy video
 - Authenticated, idempotent retention cleanup for expired source and proxy

@@ -2,7 +2,16 @@ from __future__ import annotations
 
 import numpy as np
 
-from .contracts import ComparisonEvidence, MetricSeries, PoseSnapshot, RiderTrack, Turn, VideoAnalysisResult
+from .contracts import (
+    ComparableEdge,
+    ComparisonEvidence,
+    MetricSeries,
+    PoseSnapshot,
+    RiderTrack,
+    Turn,
+    TurnPhase,
+    VideoAnalysisResult,
+)
 
 MINIMUM_MEANINGFUL_DIFFERENCE = {
     "knee_flexion_lead": 8.0,
@@ -69,7 +78,7 @@ def _compare_metric(
     reference_turns: list[Turn],
     rider_turns: list[Turn],
     threshold: float,
-    edge_type: str,
+    edge_type: ComparableEdge,
 ) -> ComparisonEvidence | None:
     pairs = _pair_turns(reference_turns, rider_turns, edge_type)
     reference_curves: list[np.ndarray] = []
@@ -91,7 +100,7 @@ def _compare_metric(
     difference = rider_template - reference_template
     if np.all(np.isnan(difference)):
         return None
-    best_phase = "apex"
+    best_phase: TurnPhase = "apex"
     best_index = 50
     best_difference = 0.0
     for phase, (start, end) in PHASE_WINDOWS.items():
@@ -112,12 +121,18 @@ def _compare_metric(
     consistency = _difference_consistency(reference_curves, rider_curves, best_index, best_difference)
     turn_confidence = float(np.mean([min(first.confidence, second.confidence) for first, second in usable_pairs]))
     confidence = min(reference.confidence, rider.confidence) * turn_confidence * consistency
-    reference_turn, rider_turn = usable_pairs[len(usable_pairs) // 2]
+    representative_index = _representative_pair_index(
+        reference_curves,
+        rider_curves,
+        best_index,
+        best_difference,
+    )
+    reference_turn, rider_turn = usable_pairs[representative_index]
     return ComparisonEvidence(
         metric_id=reference.metric_id,
         rank=0,
-        edge_type=edge_type,  # type: ignore[arg-type]
-        phase=best_phase,  # type: ignore[arg-type]
+        edge_type=edge_type,
+        phase=best_phase,
         reference_value=round(float(reference_template[best_index]), 5),
         user_value=round(float(rider_template[best_index]), 5),
         difference=round(best_difference, 5),
@@ -133,7 +148,7 @@ def _compare_metric(
 def _pair_turns(
     reference_turns: list[Turn],
     rider_turns: list[Turn],
-    edge_type: str,
+    edge_type: ComparableEdge,
 ) -> list[tuple[Turn, Turn]]:
     reference_edge = [turn for turn in reference_turns if turn.edge_type == edge_type]
     rider_edge = [turn for turn in rider_turns if turn.edge_type == edge_type]
@@ -148,8 +163,31 @@ def _resample_turn(series: MetricSeries, turn: Turn) -> np.ndarray | None:
         return None
     source_time = timestamps[mask]
     source_values = values[mask]
-    target_time = np.linspace(turn.start_ms, turn.end_ms, 101)
+    target_time = _normalized_phase_timestamps(turn)
     return np.interp(target_time, source_time, source_values)
+
+
+def _normalized_phase_timestamps(turn: Turn) -> np.ndarray:
+    """Map turn progress to time while pinning the detected apex to 50%."""
+    if not turn.start_ms < turn.apex_ms < turn.end_ms:
+        return np.linspace(turn.start_ms, turn.end_ms, 101)
+    before_apex = np.linspace(turn.start_ms, turn.apex_ms, 51)
+    after_apex = np.linspace(turn.apex_ms, turn.end_ms, 51)
+    return np.concatenate((before_apex[:-1], after_apex))
+
+
+def _representative_pair_index(
+    reference_curves: list[np.ndarray],
+    rider_curves: list[np.ndarray],
+    phase_index: int,
+    template_difference: float,
+) -> int:
+    """Choose the same-edge pair whose visible gap best represents the median."""
+    distances = [
+        abs(float(rider[phase_index] - reference[phase_index]) - template_difference)
+        for reference, rider in zip(reference_curves, rider_curves)
+    ]
+    return int(np.argmin(distances))
 
 
 def _difference_consistency(
@@ -166,7 +204,12 @@ def _difference_consistency(
 
 
 def _phase_timestamp(turn: Turn, phase_index: int) -> int:
-    return int(round(turn.start_ms + (turn.end_ms - turn.start_ms) * phase_index / 100.0))
+    phase_index = max(0, min(100, phase_index))
+    if phase_index <= 50:
+        timestamp = turn.start_ms + (turn.apex_ms - turn.start_ms) * phase_index / 50.0
+    else:
+        timestamp = turn.apex_ms + (turn.end_ms - turn.apex_ms) * (phase_index - 50) / 50.0
+    return int(round(timestamp))
 
 
 def _pose_snapshot(track: RiderTrack | None, timestamp_ms: int) -> PoseSnapshot | None:
