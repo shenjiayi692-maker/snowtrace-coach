@@ -68,7 +68,7 @@ def _positive_int_env(name: str, default: int) -> int:
 def health() -> dict[str, str]:
     return {
         "status": "ok",
-        "pipeline_version": "video-intelligence-v0.7",
+        "pipeline_version": "video-intelligence-v0.8",
         "model": Path(_model_path()).name,
     }
 
@@ -82,7 +82,7 @@ def ready() -> dict[str, object]:
     }
     if not all(checks.values()):
         raise HTTPException(503, detail={"status": "not_ready", "checks": checks})
-    return {"status": "ready", "checks": checks, "pipeline_version": "video-intelligence-v0.7"}
+    return {"status": "ready", "checks": checks, "pipeline_version": "video-intelligence-v0.8"}
 
 
 @app.post("/v1/analyze-pair")

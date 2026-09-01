@@ -30,6 +30,9 @@ PHASE_WINDOWS = {
     "completion": (60, 100),
 }
 
+MAX_INTERPOLATION_GAP_MS = 250.0
+MIN_NORMALIZED_CURVE_COVERAGE = 0.75
+
 
 class ComparisonError(RuntimeError):
     pass
@@ -164,7 +167,18 @@ def _resample_turn(series: MetricSeries, turn: Turn) -> np.ndarray | None:
     source_time = timestamps[mask]
     source_values = values[mask]
     target_time = _normalized_phase_timestamps(turn)
-    return np.interp(target_time, source_time, source_values)
+    interpolated = np.interp(target_time, source_time, source_values)
+    left_indices = np.searchsorted(source_time, target_time, side="right") - 1
+    right_indices = np.searchsorted(source_time, target_time, side="left")
+    bounded = (left_indices >= 0) & (right_indices < len(source_time))
+    safe_left = np.clip(left_indices, 0, len(source_time) - 1)
+    safe_right = np.clip(right_indices, 0, len(source_time) - 1)
+    interpolation_gaps = source_time[safe_right] - source_time[safe_left]
+    supported = bounded & (interpolation_gaps <= MAX_INTERPOLATION_GAP_MS)
+    interpolated[~supported] = np.nan
+    if float(np.mean(np.isfinite(interpolated))) < MIN_NORMALIZED_CURVE_COVERAGE:
+        return None
+    return interpolated
 
 
 def _normalized_phase_timestamps(turn: Turn) -> np.ndarray:
@@ -183,10 +197,11 @@ def _representative_pair_index(
     template_difference: float,
 ) -> int:
     """Choose the same-edge pair whose visible gap best represents the median."""
-    distances = [
-        abs(float(rider[phase_index] - reference[phase_index]) - template_difference)
-        for reference, rider in zip(reference_curves, rider_curves)
-    ]
+    distances = []
+    for reference, rider in zip(reference_curves, rider_curves):
+        pair_difference = float(rider[phase_index] - reference[phase_index])
+        distance = abs(pair_difference - template_difference) if np.isfinite(pair_difference) else float("inf")
+        distances.append(distance)
     return int(np.argmin(distances))
 
 

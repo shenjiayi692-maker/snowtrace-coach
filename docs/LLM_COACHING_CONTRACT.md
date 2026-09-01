@@ -19,7 +19,8 @@ Call the renderer only when all of the following are true:
 - at least two same-edge turns were paired;
 - the top evidence item has confidence of at least 0.70;
 - effect size is at least 1.0 after the per-metric noise floor;
-- the metric is allowed for both camera views;
+- the metric is allowed for both camera views and clears per-metric landmark
+  visibility/coverage gates in both clips;
 - one or more drill-library entries explicitly allow the metric.
 
 No LLM call is made for `rejected`, `needs_rider`, `needs_markers`, or empty

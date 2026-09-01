@@ -26,6 +26,18 @@ def values_by_metric(stance: str) -> dict[str, float | None]:
 
 
 class MetricTests(unittest.TestCase):
+    def test_occluded_lead_knee_suppresses_only_dependent_metrics(self):
+        track = asymmetric_track()
+        track.observations[0].landmarks[25, 3] = 0.1
+        metrics = {series.metric_id: series for series in compute_metric_series(track, "regular")}
+
+        self.assertIsNone(metrics["knee_flexion_lead"].values[0])
+        self.assertIsNone(metrics["lead_trail_differential"].values[0])
+        self.assertEqual(metrics["knee_flexion_lead"].confidence, 0.0)
+        self.assertIsNotNone(metrics["knee_flexion_trail"].values[0])
+        self.assertIsNotNone(metrics["upper_lower_separation"].values[0])
+        self.assertGreater(metrics["knee_flexion_trail"].confidence, 0.9)
+
     def test_regular_and_goofy_swap_anatomical_lead_trail_labels(self):
         regular = values_by_metric("regular")
         goofy = values_by_metric("goofy")

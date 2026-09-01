@@ -24,6 +24,34 @@ def track_with_quality(
 
 
 class QualityTests(unittest.TestCase):
+    def test_occluded_knee_filters_only_dependent_metrics(self):
+        track = track_with_quality(100, 0.92, 0.42)
+        for observation in track.observations:
+            observation.landmarks[25, 3] = 0.1
+        turns = [Turn(index, "heelside" if index % 2 == 0 else "toeside", index * 1000, index * 1000 + 400, index * 1000 + 800, 0.9) for index in range(3)]
+
+        result = build_quality_gate(track, turns, blur_score=90, exposure_score=90, stability_score=90, camera_mode="fixed", view_angle="three-quarter")
+
+        self.assertEqual(result.status, "limited")
+        self.assertNotIn("knee_flexion_lead", result.allowed_metrics)
+        self.assertNotIn("lead_trail_differential", result.allowed_metrics)
+        self.assertIn("knee_flexion_trail", result.allowed_metrics)
+        self.assertIn("upper_lower_separation", result.allowed_metrics)
+        visibility = next(check for check in result.checks if check.id == "metric_visibility")
+        self.assertLess(visibility.score, 75.0)
+
+    def test_no_visible_metric_chain_is_rejected(self):
+        track = track_with_quality(100, 0.92, 0.42)
+        for observation in track.observations:
+            observation.landmarks[[11, 12, 23, 24, 25, 26, 27, 28], 3] = 0.1
+        turns = [Turn(index, "heelside" if index % 2 == 0 else "toeside", index * 1000, index * 1000 + 400, index * 1000 + 800, 0.9) for index in range(3)]
+
+        result = build_quality_gate(track, turns, blur_score=90, exposure_score=90, stability_score=90, camera_mode="fixed", view_angle="three-quarter")
+
+        self.assertEqual(result.status, "rejected")
+        self.assertEqual(result.allowed_metrics, [])
+        self.assertIn("no_visible_metrics", result.hard_failures)
+
     def test_good_fixed_camera_can_pass_full(self):
         track = track_with_quality(100, 0.92, 0.42)
         turns = [Turn(index, "unknown", index * 1000, index * 1000 + 400, index * 1000 + 800, 0.9) for index in range(3)]

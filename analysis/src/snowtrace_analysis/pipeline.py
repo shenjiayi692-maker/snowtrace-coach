@@ -68,6 +68,7 @@ class AnalysisPipeline:
             stability_score=stability_score,
             camera_mode=camera_mode,
             view_angle=view_angle,
+            stance=stance,
         )
         metrics = compute_metric_series(selected, stance) if quality.status != "rejected" else []
         return VideoAnalysisResult(

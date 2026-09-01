@@ -2,7 +2,8 @@ from __future__ import annotations
 
 import numpy as np
 
-from .contracts import QualityCheck, QualityGateResult, RiderTrack, Turn, ViewAngle
+from .contracts import QualityCheck, QualityGateResult, RiderTrack, Stance, Turn, ViewAngle
+from .metrics import MIN_METRIC_FRAME_COVERAGE, MIN_METRIC_RELIABILITY, metric_landmark_reliability
 
 FULL_METRICS = [
     "knee_flexion_lead",
@@ -12,8 +13,6 @@ FULL_METRICS = [
     "fore_aft_pelvis",
     "upper_lower_separation",
     "lead_trail_differential",
-    "turn_timing",
-    "turn_consistency",
 ]
 
 LIMITED_METRICS = [
@@ -22,7 +21,6 @@ LIMITED_METRICS = [
     "pelvis_height",
     "upper_lower_separation",
     "lead_trail_differential",
-    "turn_timing",
 ]
 
 VIEW_METRICS = {
@@ -34,15 +32,11 @@ VIEW_METRICS = {
         "projected_inclination",
         "fore_aft_pelvis",
         "lead_trail_differential",
-        "turn_timing",
-        "turn_consistency",
     },
     "front-rear": {
         "pelvis_height",
         "projected_inclination",
         "upper_lower_separation",
-        "turn_timing",
-        "turn_consistency",
     },
 }
 
@@ -56,6 +50,7 @@ def build_quality_gate(
     stability_score: float,
     camera_mode: str,
     view_angle: ViewAngle,
+    stance: Stance = "regular",
 ) -> QualityGateResult:
     observations = track.observations
     segment_frames = _active_segment_frames(track)
@@ -64,6 +59,15 @@ def build_quality_gate(
     bbox_height = float(np.median([item.bbox[3] - item.bbox[1] for item in observations])) if observations else 0.0
     gap_ratio = _gap_ratio(track)
     turn_score = min(100.0, len(turns) / 3.0 * 100.0)
+    candidate_metrics = VIEW_METRICS[view_angle]
+    metric_reliability = metric_landmark_reliability(track, stance)
+    visible_metrics = {
+        metric_id
+        for metric_id in candidate_metrics
+        if metric_reliability[metric_id][0] >= MIN_METRIC_FRAME_COVERAGE
+        and metric_reliability[metric_id][1] >= MIN_METRIC_RELIABILITY
+    }
+    metric_visibility_score = len(visible_metrics) / max(1, len(candidate_metrics)) * 100.0
     checks = [
         _check("pose_coverage", "Rider visibility", coverage * 100.0, 25.0, f"Pose present in {coverage:.0%} of the selected segment"),
         _check("full_body", "Full-body visibility", visibility * 100.0, 20.0, f"Critical landmark confidence {visibility:.0%}"),
@@ -73,6 +77,13 @@ def build_quality_gate(
         _check("turns", "Usable turns", turn_score, 10.0, f"{len(turns)} candidate turns"),
         _check("stability", "Camera stability", stability_score, 5.0, f"{camera_mode} camera motion proxy"),
         _check("exposure", "Exposure", exposure_score, 5.0, "Snow and rider tonal separation"),
+        _check(
+            "metric_visibility",
+            "Metric landmark visibility",
+            metric_visibility_score,
+            10.0,
+            f"{len(visible_metrics)} of {len(candidate_metrics)} view-compatible metrics have reliable landmarks",
+        ),
     ]
     readiness = round(sum(check.score * check.weight for check in checks) / sum(check.weight for check in checks))
     failures: list[str] = []
@@ -99,10 +110,18 @@ def build_quality_gate(
         allowed: list[str] = []
     elif readiness < 75 or camera_mode == "follow" or limited_by_capture:
         status = "limited"
-        allowed = [metric for metric in LIMITED_METRICS if metric in VIEW_METRICS[view_angle]]
+        allowed = [metric for metric in LIMITED_METRICS if metric in candidate_metrics and metric in visible_metrics]
     else:
         status = "full"
-        allowed = [metric for metric in FULL_METRICS if metric in VIEW_METRICS[view_angle]]
+        allowed = [metric for metric in FULL_METRICS if metric in candidate_metrics and metric in visible_metrics]
+    visibility_limited = len(visible_metrics) < len(candidate_metrics)
+    if status != "rejected" and visibility_limited:
+        status = "limited"
+        instructions.append("Keep the metric-critical shoulders, hips, knees and ankles visible throughout each turn.")
+    if status != "rejected" and not allowed:
+        status = "rejected"
+        failures.append("no_visible_metrics")
+        instructions.append("Reframe the rider so at least one complete movement chain stays visible through the run.")
     return QualityGateResult(status, readiness, failures, checks, allowed, instructions)
 
 

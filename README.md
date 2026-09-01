@@ -28,6 +28,9 @@ analysis service.
 - Auto Trim quality scoring over the selected rider segment rather than clip
   setup time, while blur, camera stability, rider size, and usable turns remain
   independent gates; blocked blur or stability limits metric availability
+- Per-metric landmark visibility and coverage gates: an occluded knee disables
+  only measurements that require that knee, while long missing spans are never
+  silently bridged by interpolation into coaching evidence
 - Separate reference/rider camera modes plus an explicit same-view compatibility
   gate; side and front/rear footage receive different metric allowlists rather
   than pretending all 2D measurements survive every perspective

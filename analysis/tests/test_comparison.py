@@ -62,6 +62,15 @@ def result(
 
 
 class ComparisonTests(unittest.TestCase):
+    def test_long_landmark_gap_is_not_interpolated_into_a_turn_curve(self):
+        timestamps = list(range(0, 1001, 50))
+        values = [None if 300 <= timestamp <= 700 else float(timestamp) for timestamp in timestamps]
+        turn = Turn(0, "heelside", 0, 500, 1000, 0.95)
+
+        curve = _resample_turn(MetricSeries("test", timestamps, values, 0.95, "degrees"), turn)
+
+        self.assertIsNone(curve)
+
     def test_phase_normalization_anchors_asymmetric_turns_at_detected_apex(self):
         timestamps = list(range(0, 1001, 50))
 

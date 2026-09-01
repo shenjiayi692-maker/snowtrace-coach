@@ -168,6 +168,15 @@ rider size, landmark visibility, occlusion continuity, and usable turns remain
 separate checks; a good aggregate score must not override a blocked clarity or
 stability check into full metric access.
 
+For landmark-visibility audits, deliberately obscure one knee or ankle while
+leaving the rest of the rider visible. Confirm Snowtrace removes only metrics
+that depend on that joint, marks the clip limited, and retains view-compatible
+metrics whose complete landmark chain remains reliable. A metric needs at least
+75% valid frames, and no interpolation may bridge a missing landmark interval
+longer than 250 ms. If no comparable movement chain survives, reject the clip
+with a specific recapture instruction instead of returning empty-looking
+confidence.
+
 For stance audits, confirm regular maps the left leg to lead and goofy maps the
 right leg to lead for both videos independently. The signed fore/aft proxy is
 positive toward the selected anatomical lead foot. Never infer the reference

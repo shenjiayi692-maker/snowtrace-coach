@@ -72,8 +72,11 @@ Before inviting riders:
    confirm its detected apex is the 50% normalization anchor; verify the shown
    pair is closest to the median accepted gap rather than whichever turn happens
    to be in the middle of the clip.
-5. Delete the session and confirm it is no longer readable.
-6. Run the retention operation against a deliberately expired test object and
+5. Repeat with one knee hidden for part of both clips. Confirm the dependent
+   knee/differential metrics are absent, remaining visible metrics are still
+   eligible, and a gap longer than 250 ms is not interpolated into evidence.
+6. Delete the session and confirm it is no longer readable.
+7. Run the retention operation against a deliberately expired test object and
    confirm both the source and proxy objects are absent afterward.
 
 Do not expand to distributed workers until real beta timings show that one job
