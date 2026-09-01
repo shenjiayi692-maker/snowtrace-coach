@@ -168,6 +168,15 @@ rider size, landmark visibility, occlusion continuity, and usable turns remain
 separate checks; a good aggregate score must not override a blocked clarity or
 stability check into full metric access.
 
+For media-normalization audits, include one portrait phone clip encoded as
+landscape pixels plus a 90°/270° display matrix and one variable-frame-rate
+clip. Confirm the proxy contains upright pixels, has no residual rotation
+metadata, starts at zero, reports CFR 30 fps, and stays within one frame of the
+source content duration. Every source is normalized to a 1280×720 or 720×1280
+analysis canvas while its original dimensions remain recorded for quality
+context. Show Me must seek the
+same visible moment in the retained source and normalized proxy.
+
 For landmark-visibility audits, deliberately obscure one knee or ankle while
 leaving the rest of the rider visible. Confirm Snowtrace removes only metrics
 that depend on that joint, marks the clip limited, and retains view-compatible

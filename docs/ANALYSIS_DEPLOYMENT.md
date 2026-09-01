@@ -64,6 +64,9 @@ Before inviting riders:
    modes remain independent. Confirm a mismatched-view pair is blocked before
    upload. Start the two clips on opposite edges, label each first complete turn,
    and confirm the worker receives both values independently.
+   Include one rotated portrait phone clip and one variable-frame-rate clip;
+   confirm the generated proxy is upright CFR 30, begins at zero, and differs
+   from source content duration by no more than one frame.
 3. Confirm the Site automatically moves from queued to one of four honest
    terminal states: rider selection, recapture, no reliable gap, or evidence.
 4. For evidence, confirm every result declares `heelside` or `toeside`, both

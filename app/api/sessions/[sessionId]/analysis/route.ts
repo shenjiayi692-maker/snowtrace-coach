@@ -160,7 +160,7 @@ export async function POST(request: Request, context: { params: Promise<{ sessio
     await env.DB.batch([
       env.DB.prepare(
         `INSERT INTO analysis_runs (id, session_id, status, stage, pipeline_version, model_version, started_at, created_at, updated_at)
-         VALUES (?, ?, 'queued', 'dispatching', 'video-intelligence-v0.8', 'mediapipe-pose-landmarker-lite', ?, ?, ?)`,
+         VALUES (?, ?, 'queued', 'dispatching', 'video-intelligence-v0.9', 'mediapipe-pose-landmarker-lite', ?, ?, ?)`,
       ).bind(analysisRunId, sessionId, now, now, now),
       env.DB.prepare("UPDATE sessions SET status = 'processing', updated_at = ? WHERE id = ?").bind(now, sessionId),
     ]);

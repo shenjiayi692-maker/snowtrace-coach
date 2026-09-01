@@ -26,6 +26,8 @@ class VideoMetadata:
     codec: str
     size_bytes: int
     orientation: Literal["landscape", "portrait", "square"]
+    rotation_degrees: int = 0
+    start_time_seconds: float = 0.0
 
     def to_dict(self) -> dict[str, Any]:
         result = asdict(self)
@@ -122,7 +124,7 @@ class VideoAnalysisResult:
     metrics: list[MetricSeries]
     status: Literal["needs_rider", "rejected", "completed"]
     selected_track: RiderTrack | None = field(default=None, repr=False)
-    pipeline_version: str = "video-intelligence-v0.8"
+    pipeline_version: str = "video-intelligence-v0.9"
 
     def to_dict(self) -> dict[str, Any]:
         return {

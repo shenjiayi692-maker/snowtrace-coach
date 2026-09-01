@@ -30,7 +30,8 @@ def probe_video(path: str | Path) -> VideoMetadata:
     result = _run([
         "ffprobe",
         "-v", "error",
-        "-show_entries", "format=duration,size:stream=index,codec_type,codec_name,width,height,avg_frame_rate",
+        "-show_entries",
+        "format=duration,size,start_time:stream=index,codec_type,codec_name,width,height,avg_frame_rate,r_frame_rate,duration,start_time:stream_tags=rotate:stream_side_data=rotation",
         "-of", "json",
         str(source),
     ])
@@ -41,10 +42,14 @@ def probe_video(path: str | Path) -> VideoMetadata:
     stream = streams[0]
     width = int(stream.get("width") or 0)
     height = int(stream.get("height") or 0)
-    numerator, _, denominator = str(stream.get("avg_frame_rate") or "0/1").partition("/")
-    fps = float(numerator or 0) / max(float(denominator or 1), 1e-9)
-    duration = float(payload.get("format", {}).get("duration") or 0)
-    size_bytes = int(payload.get("format", {}).get("size") or source.stat().st_size)
+    rotation = _rotation_degrees(stream)
+    if rotation in {90, 270}:
+        width, height = height, width
+    fps = _frame_rate(stream.get("avg_frame_rate")) or _frame_rate(stream.get("r_frame_rate"))
+    format_metadata = payload.get("format", {})
+    duration = float(stream.get("duration") or format_metadata.get("duration") or 0)
+    start_time = float(stream.get("start_time") or format_metadata.get("start_time") or 0)
+    size_bytes = int(format_metadata.get("size") or source.stat().st_size)
     orientation = "landscape" if width > height else "portrait" if height > width else "square"
     return VideoMetadata(
         path=source,
@@ -55,20 +60,78 @@ def probe_video(path: str | Path) -> VideoMetadata:
         codec=str(stream.get("codec_name") or "unknown"),
         size_bytes=size_bytes,
         orientation=orientation,
+        rotation_degrees=rotation,
+        start_time_seconds=start_time,
     )
 
 
 def create_proxy(source: str | Path, destination: str | Path) -> Path:
+    source_path = Path(source).resolve()
+    source_metadata = probe_video(source_path)
     output = Path(destination).resolve()
     output.parent.mkdir(parents=True, exist_ok=True)
-    filter_graph = "scale=if(gt(iw\\,ih)\\,-2\\,720):if(gt(iw\\,ih)\\,720\\,-2),fps=30,setsar=1"
+    filter_graph = (
+        "scale=if(gt(iw\\,ih)\\,-2\\,720):if(gt(iw\\,ih)\\,720\\,-2),"
+        "fps=30,setpts=PTS-STARTPTS,setsar=1"
+    )
     _run([
-        "ffmpeg", "-y", "-v", "error", "-i", str(Path(source).resolve()),
+        "ffmpeg", "-y", "-v", "error", "-autorotate", "-i", str(source_path),
         "-map", "0:v:0", "-an", "-vf", filter_graph,
         "-c:v", "libx264", "-preset", "veryfast", "-crf", "24",
-        "-pix_fmt", "yuv420p", "-movflags", "+faststart", str(output),
+        "-pix_fmt", "yuv420p", "-fps_mode", "cfr",
+        "-map_metadata", "-1", "-metadata:s:v:0", "rotate=0",
+        "-movflags", "+faststart", str(output),
     ])
+    try:
+        _validate_proxy(source_metadata, probe_video(output))
+    except VideoError:
+        output.unlink(missing_ok=True)
+        raise
     return output
+
+
+def _frame_rate(value: object) -> float:
+    numerator, separator, denominator = str(value or "0/1").partition("/")
+    try:
+        if not separator:
+            return max(0.0, float(numerator))
+        return max(0.0, float(numerator) / max(float(denominator), 1e-9))
+    except ValueError:
+        return 0.0
+
+
+def _rotation_degrees(stream: dict[str, object]) -> int:
+    side_data = stream.get("side_data_list")
+    if isinstance(side_data, list):
+        for item in side_data:
+            if isinstance(item, dict) and item.get("rotation") is not None:
+                try:
+                    return int(round(float(item["rotation"]))) % 360
+                except (TypeError, ValueError):
+                    pass
+    tags = stream.get("tags")
+    if isinstance(tags, dict) and tags.get("rotate") is not None:
+        try:
+            return int(round(float(tags["rotate"]))) % 360
+        except (TypeError, ValueError):
+            pass
+    return 0
+
+
+def _validate_proxy(source: VideoMetadata, proxy: VideoMetadata) -> None:
+    frame_tolerance = 1 / 30 + 0.01
+    if abs(proxy.fps - 30.0) > 0.05:
+        raise VideoError(f"Analysis proxy must be CFR 30 fps; received {proxy.fps:.3f} fps.")
+    if abs(proxy.start_time_seconds) > frame_tolerance:
+        raise VideoError(f"Analysis proxy must start at zero; received {proxy.start_time_seconds:.3f}s.")
+    if abs(proxy.duration_seconds - source.duration_seconds) > frame_tolerance:
+        raise VideoError("Analysis proxy duration drifted by more than one frame.")
+    if proxy.rotation_degrees != 0 or proxy.orientation != source.orientation:
+        raise VideoError("Analysis proxy display orientation was not normalized.")
+    if proxy.orientation == "landscape" and (proxy.width > 1280 or proxy.height > 720):
+        raise VideoError("Landscape analysis proxy exceeds the 1280x720 bound.")
+    if proxy.orientation == "portrait" and (proxy.width > 720 or proxy.height > 1280):
+        raise VideoError("Portrait analysis proxy exceeds the 720x1280 bound.")
 
 
 def sample_visual_quality(path: str | Path, sample_count: int = 10) -> tuple[float, float]:

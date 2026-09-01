@@ -16,6 +16,11 @@ analysis service.
   preliminary quality checks, processing, one-gap report, and Show Me evidence
 - Browser-side inspection of duration, resolution, orientation, exposure, and
   image clarity before upload
+- Worker-side media normalization that honors phone display rotation, converts
+  fixed or variable frame rate clips to zero-based CFR 30 fps, bounds upright
+  analysis proxies to 1280×720 or 720×1280, and keeps original source metadata
+  for quality context; runtime checks reject duration or timebase drift beyond
+  one frame
 - Real session creation, D1 persistence, streaming R2 uploads, upload-integrity
   checks, idempotent analysis queueing, automatic status refresh, device-local
   session recovery, ranged source playback, explicit beta consent, and source
