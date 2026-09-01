@@ -149,6 +149,21 @@ export const comparisonEvidence = sqliteTable("comparison_evidence", {
   evidenceJson: text("evidence_json", { mode: "json" }).notNull(),
 }, (table) => [index("comparison_evidence_analysis_idx").on(table.analysisRunId)]);
 
+export const instructorReviews = sqliteTable("instructor_reviews", {
+  id: text("id").primaryKey(),
+  analysisRunId: text("analysis_run_id").notNull().references(() => analysisRuns.id, { onDelete: "cascade" }),
+  phaseInspectable: text("phase_inspectable", { enum: ["yes", "partly", "no"] }).notNull(),
+  metricDirectionPlausible: text("metric_direction_plausible", { enum: ["yes", "uncertain", "no"] }).notNull(),
+  explanationAssessment: text("explanation_assessment", {
+    enum: ["supported", "minor-overreach", "material-overreach", "safety-critical"],
+  }).notNull(),
+  drillAssessment: text("drill_assessment", { enum: ["safe-relevant", "safe-not-relevant", "unsafe"] }).notNull(),
+  misleadingSeverity: text("misleading_severity", { enum: ["none", "minor", "material", "safety-critical"] }).notNull(),
+  ...timestamps,
+}, (table) => [
+  uniqueIndex("instructor_reviews_analysis_uq").on(table.analysisRunId),
+]);
+
 export const analysisOutputs = sqliteTable("analysis_outputs", {
   id: text("id").primaryKey(),
   analysisRunId: text("analysis_run_id").notNull().references(() => analysisRuns.id, { onDelete: "cascade" }),

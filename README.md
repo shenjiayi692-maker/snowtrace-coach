@@ -60,6 +60,9 @@ analysis service.
 - Durable upload timestamps and idempotent evidence-view events so beta funnel
   metrics remain correct after video expiry and do not count no-evidence runs
   as completed reports
+- Bearer-protected instructor review queue with 30-minute signed source links,
+  one idempotent review per evidence-backed run, and KPI output for plausibility,
+  misleading-claim severity, latency, technical failures, and recapture coverage
 - Anonymous, D1-backed visible-gap history that compares sessions only when the
   reference fingerprint, goal, both camera contexts, both stances, both
   screen travel directions, first-turn labels, metric, edge, phase, and unit match;

@@ -439,6 +439,44 @@ test("creates, uploads, queues, reads and deletes a real analysis session", asyn
     5,
   );
 
+  const unauthorizedReviewQueue = await fetchApp("http://snowtrace.test/api/beta/reviews");
+  assert.equal(unauthorizedReviewQueue.status, 401);
+  const reviewQueueResponse = await fetchApp("http://snowtrace.test/api/beta/reviews", {
+    headers: { authorization: "Bearer beta-metrics-test-token" },
+  });
+  assert.equal(reviewQueueResponse.status, 200);
+  const reviewQueue = await reviewQueueResponse.json();
+  assert.equal(reviewQueue.items.length, 1);
+  assert.equal(reviewQueue.items[0].analysisRunId, queued.analysisRunId);
+  assert.equal(reviewQueue.items[0].review, null);
+  assert.equal(reviewQueue.items[0].evidence.edgeType, "heelside");
+  assert.match(reviewQueue.items[0].media.referenceUrl, /\/api\/analysis-media\//);
+  const reviewSource = await fetchApp(reviewQueue.items[0].media.referenceUrl);
+  assert.equal(reviewSource.status, 200);
+  assert.deepEqual(new Uint8Array(await reviewSource.arrayBuffer()), sourceBytes.reference);
+
+  const instructorReview = {
+    analysisRunId: queued.analysisRunId,
+    phaseInspectable: "yes",
+    metricDirectionPlausible: "yes",
+    explanationAssessment: "supported",
+    drillAssessment: "safe-relevant",
+    misleadingSeverity: "none",
+  };
+  const reviewResponse = await fetchApp("http://snowtrace.test/api/beta/reviews", {
+    method: "POST",
+    headers: { authorization: "Bearer beta-metrics-test-token", "content-type": "application/json" },
+    body: JSON.stringify(instructorReview),
+  });
+  assert.equal(reviewResponse.status, 201, await reviewResponse.clone().text());
+  const updatedReviewResponse = await fetchApp("http://snowtrace.test/api/beta/reviews", {
+    method: "POST",
+    headers: { authorization: "Bearer beta-metrics-test-token", "content-type": "application/json" },
+    body: JSON.stringify({ ...instructorReview, phaseInspectable: "partly" }),
+  });
+  assert.equal(updatedReviewResponse.status, 201);
+  assert.equal(database.prepare("SELECT COUNT(*) AS count FROM instructor_reviews").get().count, 1);
+
   const metricsResponse = await fetchApp("http://snowtrace.test/api/beta/metrics", {
     headers: { authorization: "Bearer beta-metrics-test-token" },
   });
@@ -457,7 +495,23 @@ test("creates, uploads, queues, reads and deletes a real analysis session", asyn
   assert.equal(metrics.funnel.reportCompletionRatePct, 100);
   assert.equal(metrics.funnel.showMeEngagementRatePct, 100);
   assert.equal(metrics.coaching.helpfulOrPartlyPct, 100);
+  assert.equal(metrics.coaching.evidenceClearlySeenPct, 100);
+  assert.equal(metrics.coaching.evidenceSeenOrPartlyPct, 100);
   assert.equal(metrics.coaching.drillIntentYesPct, 100);
+  assert.equal(metrics.coaching.helpfulnessResponseCount, 1);
+  assert.equal(metrics.coaching.evidenceClarityResponseCount, 1);
+  assert.equal(metrics.coaching.drillIntentResponseCount, 1);
+  assert.equal(metrics.instructorReview.reviewedRuns, 1);
+  assert.equal(metrics.instructorReview.reviewCoveragePct, 100);
+  assert.equal(metrics.instructorReview.metricDirectionPlausiblePct, 100);
+  assert.equal(metrics.instructorReview.phaseInspectableOrPartlyPct, 100);
+  assert.equal(metrics.instructorReview.safeRelevantDrillPct, 100);
+  assert.equal(metrics.instructorReview.materialOrSafetyCriticalClaims, 0);
+  assert.equal(metrics.instructorReview.safetyCriticalClaims, 0);
+  assert.equal(metrics.quality.technicalFailures, 0);
+  assert.equal(metrics.quality.technicalFailureRatePct, 0);
+  assert.ok(metrics.quality.medianUploadToTerminalMinutes >= 0);
+  assert.equal(metrics.quality.recaptureCoveragePct, null);
 
   const qualityPayload = {
     status: "rejected",

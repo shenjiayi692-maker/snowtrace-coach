@@ -104,6 +104,27 @@ issue log or a URL. Its key fields map to the gates as follows:
   evidence frame;
 - `ridersWithSecondSessionWithin7Days`: profiles with two completed two-video
   uploads no more than seven days apart.
+- `coaching.evidenceSeenOrPartlyPct`: riders answering yes or somewhat to the
+  in-report Show Me clarity question, with its own response denominator;
+- `instructorReview.metricDirectionPlausiblePct`: independent reviews marked
+  plausible, never inferred from rider feedback;
+- `instructorReview.materialOrSafetyCriticalClaims`: the immediate stop-gate;
+- `quality.medianUploadToTerminalMinutes`, `technicalFailureRatePct`, and
+  `recaptureCoveragePct`: the three operational quality targets.
+
+Use the local operator helper for independent review; it sends the token only
+as an Authorization header and prints 30-minute signed source links:
+
+```bash
+BETA_METRICS_TOKEN=... node scripts/beta-review.mjs list
+BETA_METRICS_TOKEN=... node scripts/beta-review.mjs submit RUN_ID yes yes supported safe-relevant none
+```
+
+The five review answers correspond to phase inspectability, metric-direction
+plausibility, explanation support, drill safety/relevance, and misleading-claim
+severity. Submitting the same run again updates its one review instead of
+double-counting it. Source links stop working after 30 minutes and the normal
+30-day deletion policy still applies.
 
 Do not substitute `analysis_runs.status = completed` for report completion: a
 completed run can legitimately contain no reliable evidence and no report.
