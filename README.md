@@ -53,6 +53,10 @@ analysis service.
 - Evidence-frame pose snapshots rendered as synchronized skeleton overlays in
   the Show Me comparison; the displayed turn pair is the one closest to the
   median accepted gap, and whole-video landmark streams are not sent to the web
+- Versioned `coach-report-v1` payloads built and persisted server-side from the
+  accepted rank-one evidence; terminal callbacks are idempotent, and restored
+  sessions render the stored metric/edge/phase/drill identity rather than
+  silently changing copy with a newer browser bundle
 - D1 schema for sessions, videos, tracks, turns, metrics, evidence, reports,
   drills, progression, and feedback; R2 binding reserved for source/proxy video
 - Authenticated, idempotent retention cleanup for expired source and proxy
@@ -76,7 +80,8 @@ custom vision model.
 
 - `app/`: the Snowtrace web vertical slice
 - `lib/analysis.ts`: shared browser-side analysis contracts and quality helpers
-- `lib/coaching.ts`: deterministic, confidence-safe coaching fallback
+- `lib/coaching.ts`: shared deterministic report contract, validator, and
+  confidence-safe fallback
 - `analysis/`: the independent MediaPipe/FFmpeg analysis service and tests
 - `docs/LLM_COACHING_CONTRACT.md`: strict evidence-rendering boundary for a
   future Responses API integration

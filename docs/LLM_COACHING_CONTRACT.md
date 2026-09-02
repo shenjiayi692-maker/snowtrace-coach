@@ -8,7 +8,11 @@ choose a different metric, invent a cause, calculate a new value, or select a
 drill outside the curated library.
 
 The current M0 uses deterministic templates in `lib/coaching.ts`. They remain
-the production fallback even after an LLM renderer is enabled.
+the production fallback even after an LLM renderer is enabled. The analysis
+callback currently renders `coach-report-v1`, records
+`deterministic-coach-v1` and `carving-drills-v1`, and persists the result before
+the browser can display it. A repeated terminal callback reuses that stored
+result instead of rewriting the report.
 
 ## Invocation gate
 
@@ -126,6 +130,13 @@ needed.
 5. Enforce short field limits before display.
 6. On refusal, timeout, API error, validation failure, or missing API key, use
    the deterministic template and record the fallback reason.
+
+After validation, adapt either renderer result into the same `coach-report-v1`
+display envelope. Validate its metric, edge, and phase against the stored
+evidence again, persist it once, and let the browser read that stored report.
+Do not make the browser the authoritative renderer. Runs completed before this
+contract may use the deterministic client fallback only for backward-compatible
+display; new runs must have a persisted report.
 
 The UI always displays the underlying confidence, same-edge paired-turn count,
 edge, phase, and Show Me timestamps independently of the generated wording.

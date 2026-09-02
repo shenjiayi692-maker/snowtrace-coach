@@ -1,4 +1,5 @@
 import { env } from "cloudflare:workers";
+import { isCoachingView, type CoachingView, type EvidenceSnapshot } from "../../../../lib/coaching";
 import { jsonError } from "../../../../lib/session-contract";
 
 export const dynamic = "force-dynamic";
@@ -35,6 +36,7 @@ type VideoRow = {
 };
 type EvidenceRow = { metric_id: string; edge_type: string; rank: number; confidence: number; effect_size: number; phase: string; user_timestamp_ms: number; reference_timestamp_ms: number; evidence_json: string };
 type OutputRow = { status: string; result_json: string };
+type ReportRow = { schema_version: string; content_json: string };
 
 type QualityCheckSnapshot = {
   id: string;
@@ -198,12 +200,25 @@ export async function GET(_request: Request, context: { params: Promise<{ sessio
     ...item,
     details: JSON.parse(evidence_json),
   }));
+  const reportRow = run ? await env.DB.prepare(
+    "SELECT schema_version, content_json FROM reports WHERE analysis_run_id = ? AND locale = 'en' LIMIT 1",
+  ).bind(run.id).first<ReportRow>() : null;
+  let report: CoachingView | null = null;
+  if (reportRow && evidence[0]) {
+    try {
+      const candidate = JSON.parse(reportRow.content_json) as unknown;
+      if (isCoachingView(candidate, evidence[0] as EvidenceSnapshot)) report = candidate;
+    } catch {
+      report = null;
+    }
+  }
 
   return Response.json({
     session,
     run,
     videos,
     evidence,
+    report,
     action: riderSelectionAction(output),
     outcome: analysisOutcome(output, evidence.length),
   }, { headers: { "cache-control": "no-store" } });

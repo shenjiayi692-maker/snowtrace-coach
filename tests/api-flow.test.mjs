@@ -319,15 +319,12 @@ test("creates, uploads, queues, reads and deletes a real analysis session", asyn
   assert.equal(selectionResponse.status, 202, await selectionResponse.clone().text());
   assert.equal((await selectionResponse.json()).status, "queued");
 
-  const callbackResponse = await fetchApp(`http://snowtrace.test/api/analysis-callback/${queued.analysisRunId}`, {
-    method: "POST",
-    headers: { "authorization": "Bearer callback-test-token", "content-type": "application/json" },
-    body: JSON.stringify({
-      analysis_id: queued.analysisRunId,
-      status: "completed",
-      reference: { status: "completed" },
-      rider: { status: "completed" },
-      evidence: [{
+  const completedCallbackPayload = {
+    analysis_id: queued.analysisRunId,
+    status: "completed",
+    reference: { status: "completed" },
+    rider: { status: "completed" },
+    evidence: [{
         metric_id: "knee_flexion_lead",
         edge_type: "heelside",
         rank: 1,
@@ -344,11 +341,31 @@ test("creates, uploads, queues, reads and deletes a real analysis session", asyn
         reference_pose: poseSnapshot(8400),
         user_pose: poseSnapshot(6900, 0.02),
         ignored_worker_field: "not persisted",
-      }],
-    }),
+    }],
+  };
+  const callbackResponse = await fetchApp(`http://snowtrace.test/api/analysis-callback/${queued.analysisRunId}`, {
+    method: "POST",
+    headers: { "authorization": "Bearer callback-test-token", "content-type": "application/json" },
+    body: JSON.stringify(completedCallbackPayload),
   });
   assert.equal(callbackResponse.status, 200, await callbackResponse.clone().text());
-  assert.equal((await callbackResponse.json()).evidenceCount, 1);
+  const callbackResult = await callbackResponse.json();
+  assert.equal(callbackResult.evidenceCount, 1);
+  assert.equal(callbackResult.reportCreated, true);
+
+  const replayedCallbackResponse = await fetchApp(`http://snowtrace.test/api/analysis-callback/${queued.analysisRunId}`, {
+    method: "POST",
+    headers: { "authorization": "Bearer callback-test-token", "content-type": "application/json" },
+    body: JSON.stringify({ ...completedCallbackPayload, evidence: [] }),
+  });
+  assert.equal(replayedCallbackResponse.status, 200);
+  assert.deepEqual(await replayedCallbackResponse.json(), {
+    accepted: true,
+    status: "completed",
+    evidenceCount: 1,
+    reused: true,
+  });
+  assert.equal(database.prepare("SELECT COUNT(*) AS count FROM reports WHERE analysis_run_id = ?").get(queued.analysisRunId).count, 1);
 
   const statusResponse = await fetchApp(new URL(created.statusUrl, "http://snowtrace.test"));
   assert.equal(statusResponse.status, 200);
@@ -360,6 +377,18 @@ test("creates, uploads, queues, reads and deletes a real analysis session", asyn
   assert.equal(status.evidence[0].details.reference_pose.timestamp_ms, 8400);
   assert.equal("z" in status.evidence[0].details.reference_pose.landmarks[0], false);
   assert.equal("ignored_worker_field" in status.evidence[0].details, false);
+  assert.equal(status.report.schemaVersion, "coach-report-v1");
+  assert.equal(status.report.rendererVersion, "deterministic-coach-v1");
+  assert.equal(status.report.drillLibraryVersion, "carving-drills-v1");
+  assert.equal(status.report.metricId, "knee_flexion_lead");
+  assert.equal(status.report.edgeType, "heelside");
+  assert.equal(status.report.phase, "apex");
+  assert.equal(status.report.drill.id, "progressive-flexion-v1");
+  const runVersions = database.prepare(
+    "SELECT prompt_version, drill_library_version FROM analysis_runs WHERE id = ?",
+  ).get(queued.analysisRunId);
+  assert.equal(runVersions.prompt_version, "deterministic-coach-v1");
+  assert.equal(runVersions.drill_library_version, "carving-drills-v1");
   assert.deepEqual(status.videos.map((video) => video.uploaded).sort(), [true, true]);
   assert.ok(status.videos.every((video) => video.playback_url.includes(created.sessionId)));
 
@@ -513,6 +542,13 @@ test("creates, uploads, queues, reads and deletes a real analysis session", asyn
   assert.ok(metrics.quality.medianUploadToTerminalMinutes >= 0);
   assert.equal(metrics.quality.recaptureCoveragePct, null);
 
+  database.prepare("DELETE FROM instructor_reviews WHERE analysis_run_id = ?").run(queued.analysisRunId);
+  database.prepare("DELETE FROM analysis_outputs WHERE analysis_run_id = ?").run(queued.analysisRunId);
+  database.prepare("DELETE FROM comparison_evidence WHERE analysis_run_id = ?").run(queued.analysisRunId);
+  database.prepare(
+    "UPDATE analysis_runs SET status = 'queued', stage = 'test_reset', completed_at = NULL WHERE id = ?",
+  ).run(queued.analysisRunId);
+
   const qualityPayload = {
     status: "rejected",
     readiness_score: 42,
@@ -548,6 +584,11 @@ test("creates, uploads, queues, reads and deletes a real analysis session", asyn
     body: JSON.stringify(reportViewedEvent),
   });
   assert.equal(noEvidenceEvent.status, 409);
+
+  database.prepare("DELETE FROM analysis_outputs WHERE analysis_run_id = ?").run(queued.analysisRunId);
+  database.prepare(
+    "UPDATE analysis_runs SET status = 'queued', stage = 'test_reset', completed_at = NULL WHERE id = ?",
+  ).run(queued.analysisRunId);
 
   const rejectedCallback = await fetchApp(`http://snowtrace.test/api/analysis-callback/${queued.analysisRunId}`, {
     method: "POST",

@@ -11,7 +11,7 @@ import {
   type VideoRole,
 } from "../lib/analysis";
 import { CONSENT_VERSION, MAX_VIDEO_BYTES } from "../lib/session-contract";
-import { buildCoachingView, type EvidenceSnapshot, type PoseSnapshot, type TurnPhase } from "../lib/coaching";
+import { buildCoachingView, type CoachingView, type EvidenceSnapshot, type PoseSnapshot, type TurnPhase } from "../lib/coaching";
 
 type Screen = "upload" | "readiness" | "processing" | "queued" | "select-rider" | "outcome" | "report";
 type Goal = "medium" | "short" | "dynamic";
@@ -72,6 +72,7 @@ type SessionSnapshot = {
   run: { id: string; status: string; stage: string | null; error_code: string | null } | null;
   videos: SessionVideoSnapshot[];
   evidence: EvidenceSnapshot[];
+  report: CoachingView | null;
   action: RiderSelectionAction | null;
   outcome: AnalysisOutcome | null;
 };
@@ -634,6 +635,7 @@ export function CoachApp() {
   const [analysisOutcome, setAnalysisOutcome] = useState<AnalysisOutcome | null>(null);
   const [isCheckingStatus, setIsCheckingStatus] = useState(false);
   const [realEvidence, setRealEvidence] = useState<EvidenceSnapshot | null>(null);
+  const [realCoaching, setRealCoaching] = useState<CoachingView | null>(null);
   const [riderAction, setRiderAction] = useState<RiderSelectionAction | null>(null);
   const [selectedTracks, setSelectedTracks] = useState<Partial<Record<VideoRole, number>>>({});
   const [feedbackAnswers, setFeedbackAnswers] = useState<FeedbackAnswers>({});
@@ -683,6 +685,7 @@ export function CoachApp() {
     }
     setAnalysisRunId(snapshot.run.id);
     if (snapshot.run.status === "needs_rider" && snapshot.action) {
+      setRealCoaching(null);
       setRiderAction(snapshot.action);
       setSelectedTracks({});
       setScreen("select-rider");
@@ -691,11 +694,13 @@ export function CoachApp() {
     if (snapshot.run.status === "completed" && snapshot.evidence[0]) {
       setAnalysisOutcome(null);
       setRealEvidence(snapshot.evidence[0]);
+      setRealCoaching(snapshot.report ?? buildCoachingView(snapshot.evidence[0]));
       setActiveMoment(snapshot.evidence[0].phase);
       setScreen("report");
       return;
     }
     if (snapshot.outcome) {
+      setRealCoaching(null);
       setAnalysisOutcome(snapshot.outcome);
       setScreen("outcome");
       return;
@@ -867,7 +872,10 @@ export function CoachApp() {
     adultAndRightsConfirmed &&
     retentionAcknowledged,
   );
-  const coaching = useMemo(() => realEvidence ? buildCoachingView(realEvidence) : null, [realEvidence]);
+  const coaching = useMemo(
+    () => realEvidence ? (realCoaching ?? buildCoachingView(realEvidence)) : null,
+    [realCoaching, realEvidence],
+  );
   const activeReferenceTimestamp = realEvidence?.reference_timestamp_ms ?? 0;
   const activeRiderTimestamp = realEvidence?.user_timestamp_ms ?? 0;
 
@@ -920,6 +928,7 @@ export function CoachApp() {
     setSubmissionError(null);
     setSubmissionProgress(0);
     setRealEvidence(null);
+    setRealCoaching(null);
     setAnalysisOutcome(null);
     setRiderAction(null);
     setSelectedTracks({});
@@ -1074,6 +1083,7 @@ export function CoachApp() {
       setSessionId(null);
       setAnalysisRunId(null);
       setRealEvidence(null);
+      setRealCoaching(null);
       setAnalysisOutcome(null);
       setRiderAction(null);
       setSelectedTracks({});
@@ -1129,6 +1139,7 @@ export function CoachApp() {
     setSubmissionError(null);
     setAnalysisOutcome(null);
     setRealEvidence(null);
+    setRealCoaching(null);
     setFeedbackAnswers({});
     setFeedbackStatus("idle");
   }
