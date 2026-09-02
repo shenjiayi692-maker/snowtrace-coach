@@ -1,7 +1,9 @@
+import tempfile
 import unittest
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
+from fastapi import HTTPException
 from fastapi.testclient import TestClient
 
 from snowtrace_analysis import api
@@ -22,22 +24,79 @@ class ApiTests(unittest.TestCase):
         self.assertEqual(response.json()["status"], "ready")
 
     def test_rejects_non_https_source(self):
-        response = TestClient(app).post(
-            "/v1/analyze-pair",
-            json={
-                "analysis_id": "analysis-test-001",
-                "reference_camera_mode": "follow",
-                "rider_camera_mode": "fixed",
-                "reference_view_angle": "three-quarter",
-                "rider_view_angle": "three-quarter",
-                "reference_stance": "regular",
-                "rider_stance": "goofy",
-                "reference": {"source_url": "http://example.com/reference.mp4"},
-                "rider": {"source_url": "http://example.com/rider.mp4"},
-            },
-        )
+        with patch.dict("os.environ", {"SNOWTRACE_JOB_TOKEN": "secret-token"}, clear=False):
+            response = TestClient(app).post(
+                "/v1/analyze-pair",
+                headers={"authorization": "Bearer secret-token"},
+                json={
+                    "analysis_id": "analysis-test-001",
+                    "reference_camera_mode": "follow",
+                    "rider_camera_mode": "fixed",
+                    "reference_view_angle": "three-quarter",
+                    "rider_view_angle": "three-quarter",
+                    "reference_stance": "regular",
+                    "rider_stance": "goofy",
+                    "reference": {"source_url": "http://example.com/reference.mp4"},
+                    "rider": {"source_url": "http://example.com/rider.mp4"},
+                },
+            )
         self.assertEqual(response.status_code, 400)
         self.assertEqual(response.json()["detail"], "Source URLs must use HTTPS.")
+
+    def test_sync_endpoint_requires_service_token(self):
+        payload = {
+            "analysis_id": "analysis-sync-auth",
+            "reference_camera_mode": "fixed",
+            "rider_camera_mode": "fixed",
+            "reference_view_angle": "side",
+            "rider_view_angle": "side",
+            "reference_stance": "regular",
+            "rider_stance": "regular",
+            "reference": {"source_url": "https://example.com/reference.mp4"},
+            "rider": {"source_url": "https://example.com/rider.mp4"},
+        }
+        with patch.dict("os.environ", {"SNOWTRACE_JOB_TOKEN": "secret-token"}, clear=False):
+            response = TestClient(app).post("/v1/analyze-pair", json=payload)
+        self.assertEqual(response.status_code, 401)
+
+    def test_analysis_id_rejects_path_characters(self):
+        payload = {
+            "analysis_id": "../../unsafe-analysis",
+            "reference_camera_mode": "fixed",
+            "rider_camera_mode": "fixed",
+            "reference_view_angle": "side",
+            "rider_view_angle": "side",
+            "reference_stance": "regular",
+            "rider_stance": "regular",
+            "reference": {"source_url": "https://example.com/reference.mp4"},
+            "rider": {"source_url": "https://example.com/rider.mp4"},
+        }
+        response = TestClient(app).post("/v1/analyze-pair", json=payload)
+        self.assertEqual(response.status_code, 422)
+
+    def test_source_download_does_not_follow_redirects(self):
+        response = MagicMock()
+        response.headers = {}
+        response.iter_bytes.return_value = [b"video"]
+        stream = MagicMock()
+        stream.__enter__.return_value = response
+        with tempfile.TemporaryDirectory() as temporary:
+            destination = Path(temporary) / "source"
+            with (
+                patch.dict("os.environ", {"SNOWTRACE_SOURCE_HOSTS": "example.com"}, clear=False),
+                patch("snowtrace_analysis.api.httpx.stream", return_value=stream) as mocked_stream,
+            ):
+                result = api._download_source("https://example.com/source", destination)
+            self.assertEqual(result.read_bytes(), b"video")
+        self.assertFalse(mocked_stream.call_args.kwargs["follow_redirects"])
+
+    def test_proxy_upload_honors_media_host_allowlist(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            proxy = Path(temporary) / "proxy.mp4"
+            proxy.write_bytes(b"proxy")
+            with patch.dict("os.environ", {"SNOWTRACE_SOURCE_HOSTS": "coach.example.com"}, clear=False):
+                with self.assertRaisesRegex(HTTPException, "host is not allowed"):
+                    api._upload_proxy(proxy, "https://attacker.example/proxy")
 
     def test_pair_analysis_preserves_each_video_context(self):
         request = api.PairAnalysisRequest(

@@ -6,7 +6,7 @@ import { jsonError } from "../../../../../lib/session-contract";
 export const dynamic = "force-dynamic";
 
 type VideoRow = { id: string; role: "reference" | "rider"; object_key: string };
-type ExistingRun = { id: string; status: string; stage: string | null };
+type ExistingRun = { id: string; status: string; stage: string | null; updated_at: string };
 type Stance = "regular" | "goofy";
 type TravelDirection = "left-to-right" | "right-to-left";
 type SessionRow = {
@@ -23,6 +23,7 @@ type SessionRow = {
   reference_first_edge: "heelside" | "toeside";
 };
 type SelectedTrackIds = Partial<Record<"reference" | "rider", number>>;
+const STALE_ANALYSIS_MS = 12 * 60 * 1000;
 
 async function dispatchToWorker(request: Request, runId: string, session: SessionRow, videos: VideoRow[], selectedTrackIds: SelectedTrackIds = {}) {
   if (!analysisServiceConfigured(env)) return "awaiting_worker";
@@ -134,7 +135,7 @@ export async function POST(request: Request, context: { params: Promise<{ sessio
   if (stored.some((object) => object === null)) return jsonError("Finish both video uploads before starting analysis.", 409);
 
   const existing = await env.DB.prepare(
-    "SELECT id, status, stage FROM analysis_runs WHERE session_id = ? AND status != 'failed' ORDER BY created_at DESC LIMIT 1",
+    "SELECT id, status, stage, updated_at FROM analysis_runs WHERE session_id = ? AND status != 'failed' ORDER BY created_at DESC LIMIT 1",
   ).bind(sessionId).first<ExistingRun>();
   if (existing) {
     let stage = existing.stage;
@@ -151,7 +152,12 @@ export async function POST(request: Request, context: { params: Promise<{ sessio
         .run();
       return Response.json({ analysisRunId: existing.id, status: "queued", stage, reused: true }, { status: 202, headers: { "cache-control": "no-store" } });
     }
-    if (existing.status === "queued" && stage !== "worker_dispatched") {
+    const updatedAt = Date.parse(existing.updated_at);
+    const staleDispatch = existing.status === "queued"
+      && stage === "worker_dispatched"
+      && Number.isFinite(updatedAt)
+      && Date.now() - updatedAt >= STALE_ANALYSIS_MS;
+    if (existing.status === "queued" && (stage !== "worker_dispatched" || staleDispatch)) {
       stage = await dispatchToWorker(request, existing.id, session, videos);
       await env.DB.prepare("UPDATE analysis_runs SET stage = ?, updated_at = ? WHERE id = ?")
         .bind(stage, new Date().toISOString(), existing.id)

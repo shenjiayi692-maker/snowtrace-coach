@@ -37,6 +37,7 @@ type VideoRow = {
 type EvidenceRow = { metric_id: string; edge_type: string; rank: number; confidence: number; effect_size: number; phase: string; user_timestamp_ms: number; reference_timestamp_ms: number; evidence_json: string };
 type OutputRow = { status: string; result_json: string };
 type ReportRow = { schema_version: string; content_json: string };
+const STALE_ANALYSIS_MS = 12 * 60 * 1000;
 
 type QualityCheckSnapshot = {
   id: string;
@@ -152,6 +153,19 @@ function riderSelectionAction(output: OutputRow | null) {
   }
 }
 
+function staleRunOutcome(run: RunRow | null) {
+  if (!run || run.status !== "queued" || run.stage !== "worker_dispatched") return null;
+  const updatedAt = Date.parse(run.updated_at);
+  if (!Number.isFinite(updatedAt) || Date.now() - updatedAt < STALE_ANALYSIS_MS) return null;
+  return {
+    kind: "technical",
+    title: "The analysis is taking longer than expected.",
+    message: "No result has arrived for 12 minutes. Retry the same job; the worker will reuse it if it is still active, or restart it if the process was lost.",
+    retryable: true,
+    videos: [],
+  };
+}
+
 export async function GET(_request: Request, context: { params: Promise<{ sessionId: string }> }) {
   const { sessionId } = await context.params;
   const session = await env.DB.prepare(
@@ -220,7 +234,7 @@ export async function GET(_request: Request, context: { params: Promise<{ sessio
     evidence,
     report,
     action: riderSelectionAction(output),
-    outcome: analysisOutcome(output, evidence.length),
+    outcome: analysisOutcome(output, evidence.length) ?? staleRunOutcome(run),
   }, { headers: { "cache-control": "no-store" } });
 }
 

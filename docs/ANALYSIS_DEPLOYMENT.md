@@ -18,13 +18,22 @@ The worker exposes:
 - `POST /v1/jobs` for authenticated asynchronous pair analysis.
 
 The service limits active work and source bytes, validates source and callback
-hosts, creates a fresh temporary directory per job, uploads only 720p proxies,
-and retries callbacks three times. Render should use `/ready` as its HTTP health
-check and allow up to 300 seconds for graceful shutdown.
+hosts, refuses cross-host source redirects, applies the media-host allowlist to
+proxy uploads, creates a fresh temporary directory per job, uploads only 720p
+proxies, and retries callbacks three times. Both `/v1/jobs` and the synchronous
+diagnostic `/v1/analyze-pair` require the service bearer token. Render should
+use `/ready` as its HTTP health check and allow up to 300 seconds for graceful
+shutdown.
+
+If a dispatched run has no callback for 12 minutes, the Site exposes an
+explicit retry state. Retrying sends the same analysis ID: a still-running
+worker reuses it, while a restarted worker can safely reconstruct the job from
+fresh signed URLs. This avoids an infinite queued screen without adding Redis
+or a second queue in the beta.
 
 ## Secrets and wiring
 
-Generate three independent random values:
+Generate four independent random values:
 
 1. `analysis_service_token` authenticates Sites → worker and worker → Sites.
 2. `analysis_signing_secret` signs short-lived source/proxy URLs owned by Sites.
@@ -52,6 +61,85 @@ as an operational incident and pause new uploads until the cleanup succeeds.
 The route is bounded and idempotent, and session creation runs a small
 best-effort cleanup as a backup; that backup does not replace the daily call.
 
+## Authorization and release boundary
+
+Publishing the web source does not enable paid analysis. Creating the private
+GitHub mirror, provisioning the Render service, or adding the three
+`ANALYSIS_*` runtime values requires the owner's separate explicit approval.
+Until then, `/api/system-status` must keep returning
+`"analysisAvailable": false`, uploads must remain disabled, and no paid service
+should exist.
+
+Before that approval, the source-only release gate is:
+
+```bash
+.venv/bin/python -m unittest discover -s analysis/tests -v
+npm run lint
+npm test
+```
+
+The Python dependency versions are intentionally fixed in `analysis/pyproject.toml`.
+MediaPipe and the worker use one `opencv-contrib-python` distribution; do not add
+another OpenCV wheel because both packages install the same `cv2` namespace.
+
+## Paid deployment checklist
+
+Run these steps only after the owner approves both the private source mirror and
+the monthly Render service:
+
+1. Push the reviewed commit to the approved private GitHub repository and create
+   the Render Blueprint from the root `render.yaml`. Do not change the plan,
+   region, instance count, health path, or allowlists during the beta.
+2. In Render, set only `SNOWTRACE_JOB_TOKEN` to the generated
+   `analysis_service_token`. Wait for the image build and `/ready` health check
+   to pass. A Docker image build is a hard release gate; local tests are not a
+   substitute when Docker is unavailable on the development machine.
+3. Check the deployed worker without sending a video:
+
+   ```bash
+   curl --fail --silent --show-error https://<worker-host>/health
+   curl --fail --silent --show-error https://<worker-host>/ready
+   curl --silent --output /dev/null --write-out '%{http_code}\n' \
+     --request POST https://<worker-host>/v1/jobs \
+     --header 'content-type: application/json' \
+     --data '{}'
+   ```
+
+   Both GET requests must return `200`; all `/ready` checks must be `true`. The
+   unauthenticated POST must return `422` for the invalid body or `401` for a
+   valid body, and must never accept a job. Keep the service URL private until
+   this gate passes.
+4. Add the five Sites runtime values listed above and republish the reviewed web
+   version. Then verify:
+
+   ```bash
+   curl --fail --silent --show-error \
+     https://snowtrace-coach.sjysjy.chatgpt.site/api/system-status
+   ```
+
+   It must return `"analysisAvailable": true` without revealing URLs or secret
+   values. Complete the UI smoke test below with an owner-owned test pair before
+   inviting any beta rider.
+
+## Fast disable and rollback
+
+If analysis is failing or returning unsafe evidence, stop new dispatches first:
+
+1. Remove `ANALYSIS_SERVICE_URL`, `ANALYSIS_SERVICE_TOKEN`, and
+   `ANALYSIS_SIGNING_SECRET` from the Sites runtime configuration, republish the
+   current web version, and confirm `/api/system-status` returns
+   `"analysisAvailable": false`. This keeps the public landing page reachable
+   while disabling uploads and paid analysis.
+2. Suspend the Render worker after dispatch is disabled. Do not delete D1, R2,
+   or the service while investigating; beta sessions and evidence remain
+   auditable and retention cleanup can still run.
+3. If the current web source itself is broken, redeploy the last known-good
+   saved Sites version. Database migrations are forward-only; never roll back by
+   deleting tables or objects.
+4. For a suspected secret leak, rotate the worker token and signing secret
+   before re-enabling dispatch. Repeat the entire smoke test and independently
+   inspect the first completed report.
+
 ## Smoke test
 
 Before inviting riders:
@@ -70,6 +158,9 @@ Before inviting riders:
    from source content duration by no more than one frame.
 3. Confirm the Site automatically moves from queued to one of four honest
    terminal states: rider selection, recapture, no reliable gap, or evidence.
+   For the lost-callback drill, stop the worker after it accepts a test job,
+   wait for the 12-minute watchdog, restart it, and confirm Retry redispatches
+   the same analysis ID rather than creating a duplicate run.
 4. For evidence, confirm every result declares `heelside` or `toeside`, both
    source clips seek to that same edge and phase, and the skeleton appears only
    while each player is near its evidence frame. Use one asymmetric turn and

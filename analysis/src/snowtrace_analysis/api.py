@@ -31,7 +31,7 @@ class ClipRequest(BaseModel):
 
 
 class PairAnalysisRequest(BaseModel):
-    analysis_id: str = Field(min_length=8, max_length=120)
+    analysis_id: str = Field(min_length=8, max_length=120, pattern=r"^[A-Za-z0-9_-]+$")
     reference: ClipRequest
     rider: ClipRequest
     reference_stance: Literal["regular", "goofy"]
@@ -88,7 +88,11 @@ def ready() -> dict[str, object]:
 
 
 @app.post("/v1/analyze-pair")
-def analyze_pair(request: PairAnalysisRequest) -> dict[str, object]:
+def analyze_pair(
+    request: PairAnalysisRequest,
+    authorization: str | None = Header(default=None),
+) -> dict[str, object]:
+    _require_job_token(authorization)
     return _run_pair_analysis(request)
 
 
@@ -98,12 +102,7 @@ def queue_pair_analysis(
     background_tasks: BackgroundTasks,
     authorization: str | None = Header(default=None),
 ) -> dict[str, object]:
-    expected = os.environ.get("SNOWTRACE_JOB_TOKEN")
-    if not expected:
-        raise HTTPException(503, "The analysis job endpoint is not configured.")
-    received = authorization[7:] if authorization and authorization.startswith("Bearer ") else ""
-    if not received or not hmac.compare_digest(received, expected):
-        raise HTTPException(401, "The analysis job is not authorized.")
+    _require_job_token(authorization)
     _validate_callback_url(request.callback_url)
 
     with _active_jobs_lock:
@@ -163,6 +162,15 @@ def _run_pair_analysis(request: PairAnalysisRequest) -> dict[str, object]:
                 response["status"] = "rejected"
                 response["error"] = str(error)
         return response
+
+
+def _require_job_token(authorization: str | None) -> None:
+    expected = os.environ.get("SNOWTRACE_JOB_TOKEN")
+    if not expected:
+        raise HTTPException(503, "The analysis job endpoint is not configured.")
+    received = authorization[7:] if authorization and authorization.startswith("Bearer ") else ""
+    if not received or not hmac.compare_digest(received, expected):
+        raise HTTPException(401, "The analysis job is not authorized.")
 
 
 def _process_job(request: PairAnalysisJobRequest) -> None:
@@ -237,7 +245,7 @@ def _download_source(source_url: str, destination: Path) -> Path:
         raise HTTPException(400, "Source URL host is not allowed.")
     max_source_bytes = _positive_int_env("SNOWTRACE_MAX_SOURCE_BYTES", 100 * 1024 * 1024)
     try:
-        with httpx.stream("GET", source_url, follow_redirects=True, timeout=60.0) as response:
+        with httpx.stream("GET", source_url, follow_redirects=False, timeout=60.0) as response:
             response.raise_for_status()
             content_length = response.headers.get("content-length")
             if content_length:
@@ -265,8 +273,12 @@ def _download_source(source_url: str, destination: Path) -> Path:
 def _upload_proxy(path: Path, upload_url: str | None) -> None:
     if not upload_url:
         return
-    if urlparse(upload_url).scheme != "https":
+    parsed = urlparse(upload_url)
+    if parsed.scheme != "https" or not parsed.hostname:
         raise HTTPException(400, "Proxy upload URLs must use HTTPS.")
+    allowed_hosts = [host.strip() for host in os.environ.get("SNOWTRACE_SOURCE_HOSTS", "").split(",") if host.strip()]
+    if allowed_hosts and parsed.hostname not in allowed_hosts:
+        raise HTTPException(400, "Proxy upload URL host is not allowed.")
     try:
         with path.open("rb") as source:
             response = httpx.put(upload_url, content=source, headers={"content-type": "video/mp4"}, timeout=60.0)

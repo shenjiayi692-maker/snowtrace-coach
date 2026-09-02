@@ -285,6 +285,18 @@ test("creates, uploads, queues, reads and deletes a real analysis session", asyn
   assert.equal(duplicateQueue.status, 200);
   assert.equal((await duplicateQueue.json()).analysisRunId, queued.analysisRunId);
 
+  database.prepare(
+    "UPDATE analysis_runs SET status = 'queued', stage = 'worker_dispatched', updated_at = ? WHERE id = ?",
+  ).run("2020-01-01T00:00:00.000Z", queued.analysisRunId);
+  const staleStatus = await (await fetchApp(new URL(created.statusUrl, "http://snowtrace.test"))).json();
+  assert.equal(staleStatus.outcome.kind, "technical");
+  assert.equal(staleStatus.outcome.retryable, true);
+  const dispatchesBeforeRetry = analysisRequests.length;
+  const staleRetry = await fetchApp(new URL(created.analysisUrl, "http://snowtrace.test"), { method: "POST" });
+  assert.equal(staleRetry.status, 200);
+  assert.equal((await staleRetry.json()).stage, "worker_dispatched");
+  assert.equal(analysisRequests.length, dispatchesBeforeRetry + 1);
+
   const needsRiderResponse = await fetchApp(`http://snowtrace.test/api/analysis-callback/${queued.analysisRunId}`, {
     method: "POST",
     headers: { "authorization": "Bearer callback-test-token", "content-type": "application/json" },

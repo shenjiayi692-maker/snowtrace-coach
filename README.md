@@ -61,6 +61,11 @@ analysis service.
   drills, progression, and feedback; R2 binding reserved for source/proxy video
 - Authenticated, idempotent retention cleanup for expired source and proxy
   objects, with an opportunistic bounded pass during session creation
+- Token-protected synchronous and asynchronous worker entry points, exact-host
+  source/proxy allowlists, no cross-host redirect following, and a 12-minute
+  lost-callback watchdog that safely redispatches the same analysis ID
+- Reproducible worker dependency pins with a single OpenCV distribution, plus
+  restricted analysis IDs that cannot become temporary-path fragments
 - Durable upload timestamps and idempotent evidence-view events so beta funnel
   metrics remain correct after video expiry and do not count no-evidence runs
   as completed reports
