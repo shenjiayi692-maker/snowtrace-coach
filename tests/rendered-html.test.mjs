@@ -73,6 +73,8 @@ test("renders capture guidance and context controls", async () => {
   assert.match(html, /Reference stance/);
   assert.match(html, /Your first turn/);
   assert.match(html, /Reference first turn/);
+  assert.match(html, /Beta access code/);
+  assert.match(html, /not stored with your videos/);
   assert.match(html, /Choose edge/);
   assert.match(html, /Left → right/);
   assert.match(html, /mirrors pose coordinates/);
@@ -115,6 +117,7 @@ test("does not create a valid session while the analysis worker is offline", asy
   }));
   const sessionBody = {
     anonymousId: "rider_1234567890abcdef",
+    betaAccessCode: "snowtrace-beta-test-code",
     consent: {
       version: "beta-consent-v1",
       adultAndRightsConfirmed: true,
@@ -159,5 +162,5 @@ test("does not create a valid session while the analysis worker is offline", asy
     body: JSON.stringify(sessionBody),
   }));
   assert.equal(response.status, 503);
-  assert.deepEqual(await response.json(), { error: "The beta analysis worker is temporarily unavailable. No video was uploaded." });
+  assert.deepEqual(await response.json(), { error: "The private beta is not accepting uploads yet." });
 });

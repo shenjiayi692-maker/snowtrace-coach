@@ -5,6 +5,7 @@ const [command, ...arguments_] = process.argv.slice(2);
 function usage() {
   console.error(`Usage:
   BETA_METRICS_TOKEN=... node scripts/beta-review.mjs list
+  BETA_METRICS_TOKEN=... node scripts/beta-review.mjs metrics
   BETA_METRICS_TOKEN=... node scripts/beta-review.mjs submit RUN_ID PHASE METRIC EXPLANATION DRILL SEVERITY
 
 Values:
@@ -42,6 +43,20 @@ if (!token) {
     console.log(`Reference @ ${(item.evidence.referenceTimestampMs / 1000).toFixed(2)}s: ${item.media.referenceUrl ?? "source expired"}`);
     console.log(`Rider @ ${(item.evidence.riderTimestampMs / 1000).toFixed(2)}s: ${item.media.riderUrl ?? "source expired"}`);
   }
+} else if (command === "metrics" && arguments_.length === 0) {
+  const result = await request("/api/beta/metrics");
+  console.log(`Decision: ${result.decision.status.toUpperCase()}${result.decision.eligible ? "" : " (not final)"}`);
+  console.log(`Riders: ${result.funnel.participants}/${result.decision.cohortTarget}`);
+  console.log(`Both uploads: ${result.funnel.ridersWithBothUploads}/${result.decision.cohortTarget}`);
+  console.log(`Actionable state: ${result.funnel.ridersWithActionableState}/${result.decision.cohortTarget}`);
+  console.log(`7-day repeats: ${result.funnel.ridersWithSecondSessionWithin7Days}/${result.decision.cohortTarget}`);
+  for (const gate of result.decision.gates) {
+    console.log(`${gate.status.padEnd(7)} ${gate.label}: ${gate.value}`);
+  }
+  if (result.decision.immediateSafetyStop) {
+    console.log(`STOP: ${result.instructorReview.materialOrSafetyCriticalClaims} material or safety-critical claim(s).`);
+  }
+  for (const blocker of result.decision.blockers) console.log(`waiting  ${blocker}`);
 } else if (command === "submit" && arguments_.length === 6) {
   const [analysisRunId, phaseInspectable, metricDirectionPlausible, explanationAssessment, drillAssessment, misleadingSeverity] = arguments_;
   const result = await request("/api/beta/reviews", {

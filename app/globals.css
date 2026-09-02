@@ -608,6 +608,42 @@ input:focus-visible {
   font-weight: 720;
 }
 
+.beta-access-field {
+  display: grid;
+  gap: 7px;
+  margin-top: 14px;
+  padding: 15px 16px;
+  border: 1px solid var(--ink);
+  background: rgba(215, 255, 62, 0.08);
+}
+
+.beta-access-field strong {
+  font-size: 0.84rem;
+}
+
+.beta-access-field input {
+  width: 100%;
+  min-height: 46px;
+  border: 1px solid var(--line);
+  border-radius: 0;
+  padding: 0 13px;
+  background: var(--snow);
+  color: var(--ink);
+  font: inherit;
+  font-size: 0.82rem;
+}
+
+.beta-access-field input:focus-visible {
+  outline: 2px solid var(--ink);
+  outline-offset: 2px;
+}
+
+.beta-access-field small {
+  color: var(--muted);
+  font-size: 0.68rem;
+  line-height: 1.4;
+}
+
 .consent-card {
   margin: 14px 0 0;
   padding: 15px 16px 14px;

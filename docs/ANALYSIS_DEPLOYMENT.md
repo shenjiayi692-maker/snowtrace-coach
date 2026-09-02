@@ -33,17 +33,20 @@ or a second queue in the beta.
 
 ## Secrets and wiring
 
-Generate four independent random values:
+Generate five independent random values:
 
 1. `analysis_service_token` authenticates Sites → worker and worker → Sites.
 2. `analysis_signing_secret` signs short-lived source/proxy URLs owned by Sites.
 3. `beta_metrics_token` protects the owner-only beta funnel endpoint.
 4. `beta_ops_token` protects the expired-video cleanup operation.
+5. `beta_access_code` is the shared, human-entered code for the invited
+   20-rider cohort. Use at least 24 random letters, digits, underscores, or
+   hyphens; do not reuse an account password.
 
 Set `SNOWTRACE_JOB_TOKEN` on the worker to `analysis_service_token`. The worker
 automatically uses it for callbacks when `SNOWTRACE_CALLBACK_TOKEN` is unset.
 
-After the worker is healthy, configure these five Sites runtime values and
+After the worker is healthy, configure these six Sites runtime values and
 publish the current saved version again:
 
 - `ANALYSIS_SERVICE_URL=https://<worker-host>`
@@ -51,6 +54,7 @@ publish the current saved version again:
 - `ANALYSIS_SIGNING_SECRET=<analysis_signing_secret>`
 - `BETA_METRICS_TOKEN=<beta_metrics_token>`
 - `BETA_OPS_TOKEN=<beta_ops_token>`
+- `BETA_ACCESS_CODE=<beta_access_code>`
 
 Never put these secret values in `.env.example`, `render.yaml`, source control, a
 deployment URL, or a beta issue log.
@@ -75,6 +79,7 @@ Before that approval, the source-only release gate is:
 ```bash
 .venv/bin/python -m unittest discover -s analysis/tests -v
 npm run lint
+npm run typecheck
 npm test
 ```
 
@@ -109,7 +114,7 @@ the monthly Render service:
    unauthenticated POST must return `422` for the invalid body or `401` for a
    valid body, and must never accept a job. Keep the service URL private until
    this gate passes.
-4. Add the five Sites runtime values listed above and republish the reviewed web
+4. Add the six Sites runtime values listed above and republish the reviewed web
    version. Then verify:
 
    ```bash

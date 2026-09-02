@@ -97,6 +97,7 @@ before(async () => {
     ANALYSIS_SERVICE_URL: "https://analysis.test",
     ANALYSIS_SERVICE_TOKEN: "callback-test-token",
     ANALYSIS_SIGNING_SECRET: "media-signing-test-secret",
+    BETA_ACCESS_CODE: "snowtrace-beta-test-code",
     BETA_METRICS_TOKEN: "beta-metrics-test-token",
     BETA_OPS_TOKEN: "beta-ops-test-token",
   };
@@ -152,6 +153,7 @@ test("creates, uploads, queues, reads and deletes a real analysis session", asyn
     headers: { "content-type": "application/json" },
     body: JSON.stringify({
       anonymousId: "rider_1234567890abcdef",
+      betaAccessCode: "snowtrace-beta-test-code",
       consent: {
         version: "beta-consent-v1",
         adultAndRightsConfirmed: true,
@@ -526,8 +528,10 @@ test("creates, uploads, queues, reads and deletes a real analysis session", asyn
   assert.equal(metrics.funnel.sessionsCreated, 1);
   assert.equal(metrics.funnel.participants, 1);
   assert.equal(metrics.funnel.sessionsWithBothUploads, 1);
+  assert.equal(metrics.funnel.ridersWithBothUploads, 1);
   assert.equal(metrics.funnel.acceptedEvidenceRuns, 1);
   assert.equal(metrics.funnel.actionableEvidenceOrRider, 1);
+  assert.equal(metrics.funnel.ridersWithActionableState, 1);
   assert.equal(metrics.funnel.reportsViewed, 1);
   assert.equal(metrics.funnel.showMeClicked, 1);
   assert.equal(metrics.funnel.ridersWithSecondSessionWithin7Days, 0);
@@ -553,6 +557,20 @@ test("creates, uploads, queues, reads and deletes a real analysis session", asyn
   assert.equal(metrics.quality.technicalFailureRatePct, 0);
   assert.ok(metrics.quality.medianUploadToTerminalMinutes >= 0);
   assert.equal(metrics.quality.recaptureCoveragePct, null);
+  assert.equal(metrics.decision.status, "collecting");
+  assert.equal(metrics.decision.eligible, false);
+  assert.equal(metrics.decision.cohortTarget, 20);
+  assert.ok(metrics.decision.blockers.includes("19 more enrolled riders"));
+  assert.ok(metrics.decision.gates.every((gate) => gate.status === "pending"));
+
+  database.prepare(
+    "UPDATE instructor_reviews SET misleading_severity = 'material' WHERE analysis_run_id = ?",
+  ).run(queued.analysisRunId);
+  const safetyStopMetrics = await (await fetchApp("http://snowtrace.test/api/beta/metrics", {
+    headers: { authorization: "Bearer beta-metrics-test-token" },
+  })).json();
+  assert.equal(safetyStopMetrics.decision.status, "stop");
+  assert.equal(safetyStopMetrics.decision.immediateSafetyStop, true);
 
   database.prepare("DELETE FROM instructor_reviews WHERE analysis_run_id = ?").run(queued.analysisRunId);
   database.prepare("DELETE FROM analysis_outputs WHERE analysis_run_id = ?").run(queued.analysisRunId);
@@ -667,6 +685,7 @@ test("counts a second completed upload within seven days without relying on reta
   const metrics = await response.json();
   assert.equal(metrics.funnel.sessionsCreated, 2);
   assert.equal(metrics.funnel.sessionsWithBothUploads, 2);
+  assert.equal(metrics.funnel.ridersWithBothUploads, 1);
   assert.equal(metrics.funnel.participants, 1);
   assert.equal(metrics.funnel.ridersWithSecondSessionWithin7Days, 1);
   assert.equal(metrics.funnel.sevenDayRepeatRatePct, 100);
@@ -770,6 +789,7 @@ test("reports worker availability without exposing runtime secrets", async () =>
   const status = await response.json();
   assert.deepEqual(status, {
     analysisAvailable: true,
+    betaAccessRequired: true,
     productScope: "snowboard_carving",
     pipelineVersion: "video-intelligence-v1.0",
   });
@@ -803,6 +823,49 @@ test("requires the current video consent before creating a session", async () =>
   assert.deepEqual(await response.json(), {
     error: "Confirm the beta video permissions and retention terms before uploading.",
   });
+});
+
+test("rejects a non-cohort beta access code before creating storage records", async () => {
+  const profileCountBefore = database.prepare("SELECT COUNT(*) AS count FROM profiles").get().count;
+  const videos = ["reference", "rider"].map((role) => ({
+    role,
+    originalName: `${role}.mp4`,
+    contentType: "video/mp4",
+    sizeBytes: 100,
+    durationSeconds: 8,
+    width: 1280,
+    height: 720,
+    fingerprint: (role === "reference" ? "c" : "d").repeat(64),
+    preflight: { resolutionScore: 88, durationScore: 100, exposureScore: 80, sharpnessScore: 75 },
+  }));
+  const response = await fetchApp("http://snowtrace.test/api/sessions", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      anonymousId: "rider_wrong_code_123456",
+      betaAccessCode: "incorrect-beta-code",
+      consent: {
+        version: "beta-consent-v1",
+        adultAndRightsConfirmed: true,
+        retentionAcknowledged: true,
+      },
+      goal: "medium",
+      cameraMode: "fixed",
+      referenceCameraMode: "fixed",
+      viewAngle: "three-quarter",
+      referenceViewAngle: "three-quarter",
+      travelDirection: "left-to-right",
+      referenceTravelDirection: "right-to-left",
+      stance: "regular",
+      referenceStance: "regular",
+      firstEdge: "heelside",
+      referenceFirstEdge: "toeside",
+      videos,
+    }),
+  });
+  assert.equal(response.status, 403);
+  assert.deepEqual(await response.json(), { error: "The beta access code is not valid." });
+  assert.equal(database.prepare("SELECT COUNT(*) AS count FROM profiles").get().count, profileCountBefore);
 });
 
 test("deletes expired source and proxy objects through the protected retention operation", async () => {

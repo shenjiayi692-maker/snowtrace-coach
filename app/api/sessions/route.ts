@@ -1,6 +1,7 @@
 import { env } from "cloudflare:workers";
 import { analysisServiceConfigured } from "../../../lib/runtime-capabilities";
 import { jsonError, parseCreateSessionInput } from "../../../lib/session-contract";
+import { secureTokenMatches } from "../../../lib/secure-token";
 import { cleanupExpiredVideos } from "../../../lib/video-retention";
 
 export const dynamic = "force-dynamic";
@@ -24,6 +25,10 @@ export async function POST(request: Request) {
 
   const parsed = parseCreateSessionInput(body);
   if (!parsed.ok) return jsonError(parsed.error, 400);
+  if (!env.BETA_ACCESS_CODE) return jsonError("The private beta is not accepting uploads yet.", 503);
+  if (!(await secureTokenMatches(parsed.value.betaAccessCode, env.BETA_ACCESS_CODE))) {
+    return jsonError("The beta access code is not valid.", 403);
+  }
   if (!analysisServiceConfigured(env)) {
     return jsonError("The beta analysis worker is temporarily unavailable. No video was uploaded.", 503);
   }

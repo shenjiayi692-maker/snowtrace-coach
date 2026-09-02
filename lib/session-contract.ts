@@ -25,6 +25,7 @@ export type SessionVideoInput = {
 
 export type CreateSessionInput = {
   anonymousId: string;
+  betaAccessCode: string;
   consent: {
     version: typeof CONSENT_VERSION;
     adultAndRightsConfirmed: true;
@@ -83,10 +84,10 @@ function parseVideo(value: unknown): SessionVideoInput | null {
     role: video.role,
     originalName: video.originalName.trim(),
     contentType: video.contentType,
-    sizeBytes: video.sizeBytes,
-    durationSeconds: video.durationSeconds,
-    width: video.width,
-    height: video.height,
+    sizeBytes: video.sizeBytes as number,
+    durationSeconds: video.durationSeconds as number,
+    width: video.width as number,
+    height: video.height as number,
     fingerprint: video.fingerprint,
     preflight: {
       resolutionScore: preflight.resolutionScore as number,
@@ -111,6 +112,9 @@ export function parseCreateSessionInput(input: unknown): ParseResult {
     consent.retentionAcknowledged !== true
   ) {
     return { ok: false, error: "Confirm the beta video permissions and retention terms before uploading." };
+  }
+  if (typeof value.betaAccessCode !== "string" || !/^[A-Za-z0-9_-]{12,64}$/.test(value.betaAccessCode.trim())) {
+    return { ok: false, error: "Enter the beta access code from your invitation." };
   }
   if (typeof value.goal !== "string" || !goals.has(value.goal)) return { ok: false, error: "Choose a supported carving goal." };
   if (typeof value.cameraMode !== "string" || !cameras.has(value.cameraMode)) return { ok: false, error: "Choose a supported camera mode." };
@@ -153,6 +157,7 @@ export function parseCreateSessionInput(input: unknown): ParseResult {
     ok: true,
     value: {
       anonymousId: value.anonymousId,
+      betaAccessCode: value.betaAccessCode.trim(),
       consent: {
         version: CONSENT_VERSION,
         adultAndRightsConfirmed: true,

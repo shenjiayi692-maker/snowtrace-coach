@@ -55,6 +55,7 @@ export async function GET(request: Request) {
   const auth = await authorized(request);
   if (auth.error) return auth.error;
   if (!env.ANALYSIS_SIGNING_SECRET) return jsonError("Beta review media is not configured.", 503);
+  const signingSecret = env.ANALYSIS_SIGNING_SECRET;
 
   const rows = await env.DB.prepare(
     `SELECT
@@ -98,7 +99,7 @@ export async function GET(request: Request) {
   const expires = Math.floor(Date.now() / 1000) + 30 * 60;
   const items = await Promise.all((rows.results ?? []).map(async (row) => {
     const sourceUrl = async (videoId: string | null) => videoId
-      ? signedMediaUrl(origin, env.ANALYSIS_SIGNING_SECRET, {
+      ? signedMediaUrl(origin, signingSecret, {
         method: "GET",
         videoId,
         analysisRunId: row.analysis_run_id,

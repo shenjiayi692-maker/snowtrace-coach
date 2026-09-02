@@ -2,6 +2,7 @@ type AnalysisRuntime = {
   ANALYSIS_SERVICE_URL?: string;
   ANALYSIS_SERVICE_TOKEN?: string;
   ANALYSIS_SIGNING_SECRET?: string;
+  BETA_ACCESS_CODE?: string;
 };
 
 export function analysisServiceConfigured(runtime: AnalysisRuntime) {
@@ -11,4 +12,8 @@ export function analysisServiceConfigured(runtime: AnalysisRuntime) {
   } catch {
     return false;
   }
+}
+
+export function betaUploadConfigured(runtime: AnalysisRuntime) {
+  return analysisServiceConfigured(runtime) && Boolean(runtime.BETA_ACCESS_CODE);
 }

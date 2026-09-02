@@ -27,6 +27,9 @@ const STALE_ANALYSIS_MS = 12 * 60 * 1000;
 
 async function dispatchToWorker(request: Request, runId: string, session: SessionRow, videos: VideoRow[], selectedTrackIds: SelectedTrackIds = {}) {
   if (!analysisServiceConfigured(env)) return "awaiting_worker";
+  const signingSecret = env.ANALYSIS_SIGNING_SECRET;
+  const serviceToken = env.ANALYSIS_SERVICE_TOKEN;
+  if (!signingSecret || !serviceToken) return "awaiting_worker";
   let serviceUrl: URL;
   try {
     serviceUrl = new URL("/v1/jobs", env.ANALYSIS_SERVICE_URL);
@@ -38,14 +41,14 @@ async function dispatchToWorker(request: Request, runId: string, session: Sessio
   const origin = new URL(request.url).origin;
   const expires = Math.floor(Date.now() / 1000) + 45 * 60;
   const byRole = Object.fromEntries(videos.map((video) => [video.role, video])) as Record<"reference" | "rider", VideoRow>;
-  const sourceUrls = await Promise.all((["reference", "rider"] as const).map((role) => signedMediaUrl(origin, env.ANALYSIS_SIGNING_SECRET, {
+  const sourceUrls = await Promise.all((["reference", "rider"] as const).map((role) => signedMediaUrl(origin, signingSecret, {
     method: "GET",
     videoId: byRole[role].id,
     analysisRunId: runId,
     purpose: "source",
     expires,
   })));
-  const proxyUrls = await Promise.all((["reference", "rider"] as const).map((role) => signedMediaUrl(origin, env.ANALYSIS_SIGNING_SECRET, {
+  const proxyUrls = await Promise.all((["reference", "rider"] as const).map((role) => signedMediaUrl(origin, signingSecret, {
     method: "PUT",
     videoId: byRole[role].id,
     analysisRunId: runId,
@@ -57,7 +60,7 @@ async function dispatchToWorker(request: Request, runId: string, session: Sessio
     const response = await fetch(serviceUrl, {
       method: "POST",
       headers: {
-        "authorization": `Bearer ${env.ANALYSIS_SERVICE_TOKEN}`,
+        "authorization": `Bearer ${serviceToken}`,
         "content-type": "application/json",
       },
       body: JSON.stringify({

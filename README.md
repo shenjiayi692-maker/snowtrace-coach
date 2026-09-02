@@ -72,6 +72,9 @@ analysis service.
 - Bearer-protected instructor review queue with 30-minute signed source links,
   one idempotent review per evidence-backed run, and KPI output for plausibility,
   misleading-claim severity, latency, technical failures, and recapture coverage
+- Human-entered shared beta access code that keeps a public landing page from
+  accepting non-cohort uploads, plus unique-rider KPI counts and a deliberately
+  delayed go/iterate/stop decision after the full seven-day observation window
 - Anonymous, D1-backed visible-gap history that compares sessions only when the
   reference fingerprint, goal, both camera contexts, both stances, both
   screen travel directions, first-turn labels, metric, edge, phase, and unit match;
@@ -112,6 +115,7 @@ Validation:
 
 ```bash
 npm run lint
+npm run typecheck
 npm test
 ```
 

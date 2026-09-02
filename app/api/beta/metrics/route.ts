@@ -1,4 +1,5 @@
 import { env } from "cloudflare:workers";
+import { buildBetaDecision } from "../../../../lib/beta-decision";
 import { jsonError } from "../../../../lib/session-contract";
 import { readBearerToken, secureTokenMatches } from "../../../../lib/secure-token";
 
@@ -64,8 +65,48 @@ export async function GET(request: Request) {
        HAVING COUNT(DISTINCT role) = 2
      )`,
   ).first<{ count: number }>();
+  const riderUploadCount = await env.DB.prepare(
+    `SELECT COUNT(DISTINCT progressions.profile_id) AS count
+     FROM sessions
+     JOIN progressions ON progressions.id = sessions.progression_id
+     WHERE EXISTS (
+       SELECT 1
+       FROM videos
+       WHERE videos.session_id = sessions.id
+         AND videos.uploaded_at IS NOT NULL
+       GROUP BY videos.session_id
+       HAVING COUNT(DISTINCT videos.role) = 2
+     )`,
+  ).first<{ count: number }>();
   const acceptedEvidenceCount = await env.DB.prepare(
     "SELECT COUNT(DISTINCT analysis_run_id) AS count FROM comparison_evidence",
+  ).first<{ count: number }>();
+  const actionableRiderCount = await env.DB.prepare(
+    `SELECT COUNT(DISTINCT progressions.profile_id) AS count
+     FROM sessions
+     JOIN progressions ON progressions.id = sessions.progression_id
+     WHERE EXISTS (
+       SELECT 1
+       FROM analysis_runs
+       WHERE analysis_runs.session_id = sessions.id
+         AND (
+           analysis_runs.status = 'needs_rider'
+           OR EXISTS (
+             SELECT 1 FROM comparison_evidence
+             WHERE comparison_evidence.analysis_run_id = analysis_runs.id
+           )
+         )
+     )`,
+  ).first<{ count: number }>();
+  const observedFollowUpCount = await env.DB.prepare(
+    `SELECT COUNT(*) AS count
+     FROM (
+       SELECT progressions.profile_id, MIN(sessions.created_at) AS first_session_at
+       FROM sessions
+       JOIN progressions ON progressions.id = sessions.progression_id
+       GROUP BY progressions.profile_id
+     )
+     WHERE julianday(first_session_at) <= julianday('now') - 7`,
   ).first<{ count: number }>();
 
   const statusRows = await env.DB.prepare("SELECT status, COUNT(*) AS count FROM analysis_runs GROUP BY status").all<StatusRow>();
@@ -126,10 +167,13 @@ export async function GET(request: Request) {
   const sessionsCreated = Number(sessionCount?.count ?? 0);
   const participants = Number(participantCount?.count ?? 0);
   const sessionsWithBothUploads = Number(uploadCount?.count ?? 0);
+  const ridersWithBothUploads = Number(riderUploadCount?.count ?? 0);
   const ridersWithSecondSessionWithin7Days = Number(repeatCount?.count ?? 0);
   const acceptedEvidenceRuns = Number(acceptedEvidenceCount?.count ?? 0);
   const needsRiderCurrent = Number(statuses.needs_rider ?? 0);
   const actionableEvidenceOrRider = acceptedEvidenceRuns + needsRiderCurrent;
+  const ridersWithActionableState = Number(actionableRiderCount?.count ?? 0);
+  const ridersWithMaturedSevenDayWindow = Number(observedFollowUpCount?.count ?? 0);
   const reportsViewed = Number(events.report_viewed ?? 0);
   const showMeClicked = Number(events.show_me_clicked ?? 0);
   const useful = Number(feedback["report_helpfulness:yes"] ?? 0) + Number(feedback["report_helpfulness:partly"] ?? 0);
@@ -171,17 +215,38 @@ export async function GET(request: Request) {
     }
   }
 
+  const decision = buildBetaDecision({
+    participants,
+    ridersWithMaturedSevenDayWindow,
+    ridersWithBothUploads,
+    ridersWithActionableState,
+    ridersWithSecondSessionWithin7Days,
+    acceptedEvidenceRuns,
+    reviewCount,
+    clarityResponses,
+    helpfulResponses,
+    drillResponses,
+    metricDirectionPlausiblePct: ratio(plausibleReviews, reviewCount),
+    evidenceSeenOrPartlyPct: ratio(claritySeen, clarityResponses),
+    helpfulOrPartlyPct: ratio(useful, helpfulResponses),
+    drillIntentYesPct: ratio(drillYes, drillResponses),
+    materialOrCriticalClaims: materialOrCritical,
+  });
+
   return Response.json({
     generatedAt: new Date().toISOString(),
     funnel: {
       sessionsCreated,
       participants,
       sessionsWithBothUploads,
+      ridersWithBothUploads,
       acceptedEvidenceRuns,
       actionableEvidenceOrRider,
+      ridersWithActionableState,
       reportsViewed,
       showMeClicked,
       ridersWithSecondSessionWithin7Days,
+      ridersWithMaturedSevenDayWindow,
       uploadCompletionRatePct: ratio(sessionsWithBothUploads, sessionsCreated),
       actionableStateRatePct: ratio(actionableEvidenceOrRider, sessionsWithBothUploads),
       reportCompletionRatePct: ratio(reportsViewed, acceptedEvidenceRuns),
@@ -219,6 +284,7 @@ export async function GET(request: Request) {
       materialOrSafetyCriticalClaims: materialOrCritical,
       safetyCriticalClaims: safetyCritical,
     },
+    decision,
     raw: { statuses, feedback, events, reviews, errors },
   }, { headers: { "cache-control": "private, no-store" } });
 }

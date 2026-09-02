@@ -32,6 +32,14 @@ selection, and explanation issues. Then release the same version to the other
 15 riders; do not continuously change metric thresholds during that second
 group.
 
+Use one random beta access code for this 20-rider cohort and send it separately
+from the public Site link. The Site accepts a session only when both the worker
+and `BETA_ACCESS_CODE` are configured. The code is checked in constant time,
+is not stored with the session or videos, and must never be placed in a URL,
+analytics event, screenshot, or issue log. Rotate it before a later cohort. A
+shared code is intentional for this concierge-sized beta; do not build an
+invite-management system unless unauthorized use actually occurs.
+
 ## Rider protocol
 
 1. Rider selects one reference clip and one recent clip of their own.
@@ -96,9 +104,13 @@ issue log or a URL. Its key fields map to the gates as follows:
 
 - `sessionsWithBothUploads`: two distinct video roles have `uploaded_at`; it
   remains historically correct after the R2 objects expire;
+- `ridersWithBothUploads`: unique riders with at least one completed upload
+  pair; use this field—not session count—for the 16/20 cohort gate;
 - `acceptedEvidenceRuns`: runs with at least one stored evidence item;
 - `actionableEvidenceOrRider`: accepted-evidence runs plus runs currently
   awaiting rider selection;
+- `ridersWithActionableState`: unique riders with at least one evidence-backed
+  run or actionable rider-selection state; use this for the 14/20 cohort gate;
 - `reportsViewed`: evidence-backed reports actually opened in the web client;
 - `showMeClicked`: reports where the rider explicitly recentered the paired
   evidence frame;
@@ -111,12 +123,17 @@ issue log or a URL. Its key fields map to the gates as follows:
 - `instructorReview.materialOrSafetyCriticalClaims`: the immediate stop-gate;
 - `quality.medianUploadToTerminalMinutes`, `technicalFailureRatePct`, and
   `recaptureCoveragePct`: the three operational quality targets.
+- `decision`: a machine-readable provisional gate summary. It remains
+  `collecting` until all 20 riders have had a full seven-day observation window
+  and every accepted report has all three rider answers plus one independent
+  review. A material or safety-critical claim changes it to `stop` immediately.
 
 Use the local operator helper for independent review; it sends the token only
 as an Authorization header and prints 30-minute signed source links:
 
 ```bash
 BETA_METRICS_TOKEN=... node scripts/beta-review.mjs list
+BETA_METRICS_TOKEN=... node scripts/beta-review.mjs metrics
 BETA_METRICS_TOKEN=... node scripts/beta-review.mjs submit RUN_ID yes yes supported safe-relevant none
 ```
 
@@ -170,8 +187,8 @@ Use absolute counts alongside percentages because the cohort is small.
 
 | Signal | Go | Investigate / iterate | Stop or redesign |
 | --- | ---: | ---: | ---: |
-| Complete both uploads | at least 16/20 | 12–15/20 | fewer than 12/20 |
-| Reach accepted evidence or actionable rider-selection state (`actionableEvidenceOrRider`) | at least 14/20 | 10–13/20 | fewer than 10/20 |
+| Complete both uploads (`ridersWithBothUploads`) | at least 16/20 | 12–15/20 | fewer than 12/20 |
+| Reach accepted evidence or actionable rider-selection state (`ridersWithActionableState`) | at least 14/20 | 10–13/20 | fewer than 10/20 |
 | Instructor: metric direction plausible | at least 80% of accepted reports | 65–79% | below 65% |
 | Rider can see the highlighted gap | at least 70% | 50–69% | below 50% |
 | Report useful or partly useful | at least 70% | 50–69% | below 50% |

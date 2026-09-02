@@ -621,6 +621,7 @@ export function CoachApp() {
   const [referenceStance, setReferenceStance] = useState("regular");
   const [firstEdge, setFirstEdge] = useState("");
   const [referenceFirstEdge, setReferenceFirstEdge] = useState("");
+  const [betaAccessCode, setBetaAccessCode] = useState("");
   const [adultAndRightsConfirmed, setAdultAndRightsConfirmed] = useState(false);
   const [retentionAcknowledged, setRetentionAcknowledged] = useState(false);
   const [activeStage, setActiveStage] = useState(0);
@@ -869,6 +870,7 @@ export function CoachApp() {
     referenceTravelDirection &&
     firstEdge &&
     referenceFirstEdge &&
+    /^[A-Za-z0-9_-]{12,64}$/.test(betaAccessCode.trim()) &&
     adultAndRightsConfirmed &&
     retentionAcknowledged,
   );
@@ -922,6 +924,7 @@ export function CoachApp() {
       !referenceTravelDirection ||
       !firstEdge ||
       !referenceFirstEdge ||
+      !/^[A-Za-z0-9_-]{12,64}$/.test(betaAccessCode.trim()) ||
       !adultAndRightsConfirmed ||
       !retentionAcknowledged
     ) return;
@@ -944,6 +947,7 @@ export function CoachApp() {
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
           anonymousId: getAnonymousRiderId(),
+          betaAccessCode: betaAccessCode.trim(),
           consent: {
             version: CONSENT_VERSION,
             adultAndRightsConfirmed,
@@ -1208,7 +1212,7 @@ export function CoachApp() {
                   <strong>{serviceAvailability === "checking" ? "Checking the video-intelligence worker…" : "New uploads are temporarily paused."}</strong>
                   <p>{serviceAvailability === "checking"
                     ? "Snowtrace will confirm capacity before any source video leaves this device."
-                    : "The MediaPipe worker is offline. You can review the filming guide, but Snowtrace will not accept or store a video until it is available."}</p>
+                    : "This beta is not accepting new videos right now. You can review the filming guide, but Snowtrace will not store a clip until intake is ready."}</p>
                 </div>
                 {serviceAvailability === "unavailable" && (
                   <button type="button" className="secondary-button" onClick={checkServiceAvailability}>Check again</button>
@@ -1326,6 +1330,22 @@ export function CoachApp() {
             <p className="context-help">
               Travel means the rider&apos;s direction across the screen; Snowtrace mirrors pose coordinates so opposite filming directions remain comparable. First turn means the first complete turn after the rider enters frame and keeps heelside paired with heelside, toeside with toeside.
             </p>
+
+            <label className="beta-access-field">
+              <span className="eyebrow">PRIVATE BETA ACCESS</span>
+              <strong>Beta access code</strong>
+              <input
+                type="password"
+                value={betaAccessCode}
+                onChange={(event) => setBetaAccessCode(event.target.value)}
+                autoComplete="off"
+                spellCheck={false}
+                minLength={12}
+                maxLength={64}
+                placeholder="Enter the code from your invitation"
+              />
+              <small>The code is sent only when the private session is created and is not stored with your videos.</small>
+            </label>
 
             <fieldset className="consent-card">
               <legend>Before uploading</legend>

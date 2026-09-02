@@ -1,11 +1,12 @@
 import { env } from "cloudflare:workers";
-import { analysisServiceConfigured } from "../../../lib/runtime-capabilities";
+import { betaUploadConfigured } from "../../../lib/runtime-capabilities";
 
 export const dynamic = "force-dynamic";
 
 export async function GET() {
   return Response.json({
-    analysisAvailable: analysisServiceConfigured(env),
+    analysisAvailable: betaUploadConfigured(env),
+    betaAccessRequired: true,
     productScope: "snowboard_carving",
     pipelineVersion: "video-intelligence-v1.0",
   }, { headers: { "cache-control": "no-store" } });
