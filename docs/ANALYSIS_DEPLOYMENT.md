@@ -123,12 +123,13 @@ HTTPS. Never expose the virtual-environment development server on `0.0.0.0`.
 3. In a second terminal, verify localhost before creating a tunnel:
 
    ```bash
-   curl --fail --silent --show-error http://127.0.0.1:8080/health
-   curl --fail --silent --show-error http://127.0.0.1:8080/ready
+   npm run worker:check -- http://127.0.0.1:8080
    ```
 
-   Both requests must return `200`; `/ready` must report the pose model,
-   FFmpeg, and ffprobe as `true`.
+   The check requires `200` health/readiness responses, the expected pipeline
+   version, a present pose model, FFmpeg and ffprobe, and a `401` response for
+   a format-valid job submitted without a bearer token. It never reads or sends
+   the service token and never submits a video.
 
 4. Start one free HTTPS tunnel that forwards to `http://127.0.0.1:8080`.
    Prefer an account-bound ngrok development domain for the attended beta
@@ -136,9 +137,13 @@ HTTPS. Never expose the virtual-environment development server on `0.0.0.0`.
    acceptable for a short smoke test only because its hostname changes and it
    has no availability commitment.
 
-5. From outside localhost, repeat `/health` and `/ready`, then confirm a
-   format-valid `POST /v1/jobs` without the bearer token returns `401`. Only
-   after those checks pass, set the six Sites runtime values listed above and
+5. From outside localhost, repeat the same check against the tunnel URL:
+
+   ```bash
+   npm run worker:check -- https://<worker-host>
+   ```
+
+   Only after it passes, set the six Sites runtime values listed above and
    republish the reviewed Site version.
 
 6. Keep the Mac awake until each accepted job has delivered its callback. If

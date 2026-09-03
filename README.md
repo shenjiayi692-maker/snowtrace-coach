@@ -171,6 +171,14 @@ binds only to `127.0.0.1`; a tunnel is a separate, explicit deployment step.
 See `docs/ANALYSIS_DEPLOYMENT.md` for the free local-beta runbook and its
 availability limits.
 
+Verify either localhost or the eventual HTTPS tunnel without sending a video
+or exposing the service token:
+
+```bash
+npm run worker:check -- http://127.0.0.1:8080
+npm run worker:check -- https://<worker-host>
+```
+
 ## Deployment shape
 
 The web UI is built with Vinext and deployed through Sites. `.openai/hosting.json`

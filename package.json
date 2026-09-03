@@ -12,7 +12,8 @@
     "test": "npm run build && node --no-warnings --experimental-loader ./tests/cloudflare-loader.mjs --test tests/*.test.mjs",
     "lint": "eslint . --ignore-pattern dist --ignore-pattern .next",
     "typecheck": "tsc --noEmit",
-    "db:generate": "drizzle-kit generate"
+    "db:generate": "drizzle-kit generate",
+    "worker:check": "node scripts/check-analysis-worker.mjs"
   },
   "dependencies": {
     "drizzle-orm": "0.45.2",
