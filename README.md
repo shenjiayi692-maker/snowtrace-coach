@@ -156,6 +156,21 @@ For one-off local analysis:
 .venv/bin/snowtrace-analyze rider.mp4 --output result.json
 ```
 
+For a zero-monthly-cost concierge beta, start the token-protected worker on
+loopback with the checked-in launcher:
+
+```bash
+export SNOWTRACE_JOB_TOKEN='<analysis_service_token>'
+./scripts/run-local-analysis.sh
+```
+
+The launcher refuses to start without a token, verifies FFmpeg, ffprobe, the
+virtual environment, the MediaPipe model, and the requested port, limits the
+worker to one active analysis, and deliberately disables local-file URLs. It
+binds only to `127.0.0.1`; a tunnel is a separate, explicit deployment step.
+See `docs/ANALYSIS_DEPLOYMENT.md` for the free local-beta runbook and its
+availability limits.
+
 ## Deployment shape
 
 The web UI is built with Vinext and deployed through Sites. `.openai/hosting.json`

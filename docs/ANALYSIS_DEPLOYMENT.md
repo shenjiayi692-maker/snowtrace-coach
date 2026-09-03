@@ -87,6 +87,75 @@ The Python dependency versions are intentionally fixed in `analysis/pyproject.to
 MediaPipe and the worker use one `opencv-contrib-python` distribution; do not add
 another OpenCV wheel because both packages install the same `cv2` namespace.
 
+## Zero-cost local concierge path
+
+Use this path for the first five attended beta riders before paying for an
+always-on service. It runs the same Python pipeline and security contract as
+the hosted worker, but the operator's Mac supplies the CPU and must stay awake
+and online while a job is running.
+
+This is an HTTP worker, even though its job is background video processing. A
+free tunnel forwards only the small authenticated job request to localhost;
+the worker downloads the signed source videos and uploads proxies directly over
+HTTPS. Never expose the virtual-environment development server on `0.0.0.0`.
+
+1. Install the pinned Python package and verify the local release gate:
+
+   ```bash
+   python3.12 -m venv .venv
+   .venv/bin/pip install -e analysis
+   .venv/bin/python -m unittest discover -s analysis/tests -v
+   ```
+
+2. Put the generated `analysis_service_token` in the current shell only and
+   start the loopback worker:
+
+   ```bash
+   export SNOWTRACE_JOB_TOKEN='<analysis_service_token>'
+   ./scripts/run-local-analysis.sh
+   ```
+
+   Do not add the token to a tracked `.env` file, shell script, command-line
+   argument, issue, or log. The launcher binds to `127.0.0.1:8080`, restricts
+   media and callback hosts to the production Site, allows one active job, and
+   unsets the local-file testing override.
+
+3. In a second terminal, verify localhost before creating a tunnel:
+
+   ```bash
+   curl --fail --silent --show-error http://127.0.0.1:8080/health
+   curl --fail --silent --show-error http://127.0.0.1:8080/ready
+   ```
+
+   Both requests must return `200`; `/ready` must report the pose model,
+   FFmpeg, and ffprobe as `true`.
+
+4. Start one free HTTPS tunnel that forwards to `http://127.0.0.1:8080`.
+   Prefer an account-bound ngrok development domain for the attended beta
+   because it remains stable between restarts. A TryCloudflare Quick Tunnel is
+   acceptable for a short smoke test only because its hostname changes and it
+   has no availability commitment.
+
+5. From outside localhost, repeat `/health` and `/ready`, then confirm a
+   format-valid `POST /v1/jobs` without the bearer token returns `401`. Only
+   after those checks pass, set the six Sites runtime values listed above and
+   republish the reviewed Site version.
+
+6. Keep the Mac awake until each accepted job has delivered its callback. If
+   the worker, tunnel, or laptop stops mid-job, restore both processes and use
+   the Site's retry action after the 12-minute watchdog appears. The repeated
+   analysis ID makes that retry idempotent.
+
+Stop this path and move to an unattended service when any of these becomes
+true: riders submit without the operator present, a job waits because the Mac
+is asleep, the tunnel quota interrupts a session, or five accepted riders have
+completed the concierge checkpoint. Cloud Run with request-based billing is
+the next cost-sensitive option; the fixed Render `1c-2g` service remains the
+simpler predictable-capacity option.
+
+Do not install a queue, Redis, Celery, Kubernetes, automatic tunnel restarter,
+or multi-worker orchestration for this five-rider checkpoint.
+
 ## Paid deployment checklist
 
 Run these steps only after the owner approves both the private source mirror and
