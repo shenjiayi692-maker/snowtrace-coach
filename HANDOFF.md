@@ -7,11 +7,13 @@ five claims were read off the GitHub web view rather than measured.
 The source is now available locally at `analysis/src/snowtrace_analysis/`
 (11 modules, 1679 lines) and §1–§4 were verified by reading it.
 
-**Read §8 first.** L0 and L1 have both since run, and L1 produced findings that
-matter more than any of claims A–E: the pipeline degrades the footage it then
-judges (§8.1), and the camera-stability metric barely responds to camera
-movement (§8.2). §1–§4 are kept as the record of what was derived before any
-code ran, not as the current state.
+**Read §10 first, then §9 and §8.** L0 and L1 have both run, three production
+defects were found and fixed, and the claim table at the end of §10 is the
+current state. §1–§4 are the record of what was derived before any code ran, and
+several of their conclusions have since been superseded — §4.1's fix was later
+reverted as harmful (§9.1), and claim E moved from "confirmed" to "fixed, with
+seed secrecy as the residual risk" (§10.1). Trust the highest-numbered section
+on any given point.
 
 ---
 
@@ -684,3 +686,104 @@ target than any of A–E, and it is where L3 (abstention) should aim.
 | 8.2 — stability blind to shake | confirmed, open |
 | 8.7 — proxy rejects >16:9 portrait | **fixed** |
 | 9.3 — capture checks cannot reject | **new, and the most structural** |
+
+---
+
+## 10. Sampler fix and the definitive L1 (2026-09-04)
+
+`sample_visual_quality` rewritten: stride-based sequential decode with seeded
+per-window jitter, 203 samples over 810 frames (25%) instead of 10 fixed
+linspace positions (1.2%). `AnalysisPipeline` takes `quality_seed`; production
+leaves it `None` so positions are unguessable, the eval pins 20260904.
+
+Full ladder re-run: 36 rungs, **zero invalid**, only the two known `turn_count`
+expectation errors.
+
+### 10.1 The fix works against the realistic attacker, and not against the other one
+
+| attacker | `blur_score` | clean baseline |
+|---|---|---|
+| pre-fix, 10 fixed frames | **53** | 54 |
+| `evasion_blind` — wrong seed | **1** | 51 |
+| `evasion_oracle` — knows the seed | **49–50** | 51 |
+
+`evasion_blind` scores **1**, which is exactly what uniform blur at sigma 8
+scores on the blur axis. An attacker who does not know the jitter gains
+**nothing at all** — the evasion is completely defeated.
+
+**`evasion_oracle` is not defeated, and the report should not be read as saying
+it is.** 49–50 against a clean baseline of 51 is a ~2-point loss, inside the
+run-to-run noise band (sd 0.87) plus re-encode cost. The oracle attack still
+reproduces clean-footage scores almost exactly. It happens to land under the 50
+threshold here only because this clip's baseline sits one point above the line;
+on footage scoring 80 clean, an oracle attacker would score ~78 and sail
+through.
+
+So the fix changes the attack from *trivial and secretless* to *requires the
+seed*. That is a real improvement, but **seed secrecy is the entire remaining
+defense**. If the seed is ever fixed, logged, made configurable in a public
+place, or derived from file content, the hole reopens in full.
+
+### 10.2 New calibration problem, created by fixing the measurement
+
+With blur measured properly, the threshold's position becomes the problem:
+
+- clean clip, measured directly: **57.7** (sd 0.87 across seeds)
+- clean clip after one crf-18 re-encode (the ladder's own baseline): **51**
+- threshold: **50**
+
+The margin is one point, against a sampler with ~0.9 points of run-to-run
+spread. **A genuinely clean clip can flip between `full` and `limited` on
+repeated uploads of the same file.** That is not a regression from the seed —
+the old sampler's spread was 3.5x wider (sd 3.09, range 49.3–60.4), it was just
+frozen at one arbitrary draw. Fixing the measurement exposed that the threshold
+was never calibrated against the metric's actual distribution.
+
+The blur threshold needs re-deriving from the corrected sampler. Not attempted
+here: it is a product decision about how much softness is acceptable, and it
+wants more than one clip.
+
+### 10.3 Harness artefact worth knowing before reading any flip point
+
+Every rung pays one crf-18 re-encode, so the ladder's `severity 0` baseline is
+**six points below the actual clean clip** (51 vs 57.7). The `full`→`limited`
+flip at sigma 0.5 therefore includes the re-encode penalty, not just the
+injected blur. Flip points on this ladder are upper bounds on sensitivity.
+
+### 10.4 Two defects in the harness, both found by crashing
+
+1. **ffmpeg's expression parser caps out between 80 and 100 `eq()` terms**
+   (exit 244). With 203 sample positions the evasion filter was far past it.
+   Split into chained `gblur` instances, each owning a frame range via
+   `between(n,lo,hi)` with ≤50 terms — five segments for this clip.
+2. **The "one rung must not kill the run" fix from §8 did not cover `render()`**,
+   which sat outside the `try`. The crash above destroyed 32 completed rungs.
+   `render()` is now inside it. The lesson is the same one this suite keeps
+   producing: a guard that was never exercised is not a guard.
+
+### 10.5 Everything else, unchanged from §9
+
+- **§8.2 open.** Shake 0→32 still moves `stability_score` only 79→74.
+- **Claim B still moot.** `rider_not_found` at k ≤ 0.5, nowhere near the 0.12
+  floor.
+- **Capture checks still cannot reject** (§9.3). Every `rejected` row in this
+  run is `pose_coverage`, `critical_landmarks`, `rider_not_found`,
+  `insufficient_turns` or `no_visible_metrics`. Both evasion axes included —
+  they were rejected for tracking damage, never for blur.
+- **`rider_size` blur column still invalid** — 100 at k=0.7 from the pad border.
+- **Two `turn_count` MISSes still the ladder's fault**, expectations unrevised.
+
+### Claim status
+
+| claim | status |
+|---|---|
+| A — turns check is dead weight | confirmed |
+| B — rider size has three numbers | moot — tracking binds far earlier |
+| C — two mechanisms disagree | confirmed, narrowed by 9.3 |
+| D — weights sum to 110 | confirmed |
+| E — blur judged from ~10 frames | **fixed**; residual risk is seed secrecy (10.1) |
+| 8.1 — gate judged its own rescaling | fixed |
+| 8.2 — stability blind to shake | **open** |
+| 8.7 — proxy rejects >16:9 portrait | fixed |
+| 9.3 — capture checks cannot reject | **open, most structural** |
+| 10.2 — blur threshold inside the noise band | **new, open** |

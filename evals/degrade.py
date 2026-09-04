@@ -161,7 +161,8 @@ def turn_count_ladder(duration: float) -> list[Rung]:
     return rungs
 
 
-def sampling_evasion_ladder(indices: list[int], label: str = "sampling_evasion") -> list[Rung]:
+def sampling_evasion_ladder(indices: list[int], frame_count: int,
+                            label: str = "sampling_evasion") -> list[Rung]:
     """Blur everything EXCEPT `indices`, the frames an attacker bets on.
 
     Run twice, against two attackers, because the fix and the residual risk are
@@ -182,14 +183,33 @@ def sampling_evasion_ladder(indices: list[int], label: str = "sampling_evasion")
     to do with the blur check -- which is exactly how the pre-fix run looked
     like a pass while the check was being walked straight past.
     """
-    if not indices:
+    if not indices or frame_count <= 0:
         return []
-    keep = "+".join(f"eq(n\\,{i})" for i in indices)
+
+    # ffmpeg's expression parser fails somewhere between 80 and 100 `eq()`
+    # terms (exit 244, "Error when evaluating the expression"). The sampler now
+    # reads 203 frames, so a single enable expression is well past that. Split
+    # into chained gblur instances, each responsible for one frame range and
+    # sparing only the indices inside it, which keeps every expression short.
+    chunk = 50
+    groups = [indices[i:i + chunk] for i in range(0, len(indices), chunk)]
+
+    def _graph(sigma: float) -> str:
+        parts, lo = [], 0
+        for position, group in enumerate(groups):
+            hi = frame_count - 1 if position == len(groups) - 1 else group[-1]
+            keep = "+".join(f"eq(n\\,{i})" for i in group)
+            parts.append(
+                f"gblur=sigma={sigma}:"
+                f"enable='between(n\\,{lo}\\,{hi})*not({keep})'"
+            )
+            lo = hi + 1
+        return ",".join(parts)
+
     return [
-        Rung(label, sigma,
-             f"gblur=sigma={sigma}:enable='not({keep})'",
-             "any",
-             f"sharp at {len(indices)} frames; the rest at sigma={sigma}")
+        Rung(label, sigma, _graph(sigma), "any",
+             f"sharp at {len(indices)} of {frame_count} frames; "
+             f"the rest at sigma={sigma}")
         for sigma in (8, 16)
     ]
 
@@ -427,15 +447,17 @@ def main() -> int:
         rungs = (blur_ladder() + shake_ladder()
                  + rider_size_ladder(meta.width, meta.height)
                  + exposure_ladder() + turn_count_ladder(duration)
-                 + sampling_evasion_ladder(blind_indices, "evasion_blind")
-                 + sampling_evasion_ladder(gate_indices, "evasion_oracle"))
+                 + sampling_evasion_ladder(blind_indices, frame_count,
+                                          "evasion_blind")
+                 + sampling_evasion_ladder(gate_indices, frame_count,
+                                          "evasion_oracle"))
         if args.only:
             rungs = [r for r in rungs if r.axis in args.only]
 
         for i, rung in enumerate(rungs, 1):
             print(f"[{i}/{len(rungs)}] {rung.axis} @ {rung.severity}", flush=True)
-            clip = render(clean, rung, tmp)
             try:
+                clip = render(clean, rung, tmp)
                 outcomes.append(evaluate(
                     rung, clip, args.model, tmp / "work",
                     expected_indices=(gate_indices
