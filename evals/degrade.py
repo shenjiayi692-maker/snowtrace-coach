@@ -91,23 +91,41 @@ def shake_ladder() -> list[Rung]:
     # Deterministic sinusoidal crop offset. Amplitude in source pixels; the
     # proxy downscale to 720p reduces effective flow, which is the point --
     # stability is measured post-normalization, like in production.
+    # The crop must be scaled straight back to the original geometry. Cropping
+    # alone makes the frame *more* elongated, and create_proxy only ever scales
+    # the short side to 720 -- so a portrait clip near 16:9 gets pushed past the
+    # validator's 1280 long-side bound and the rung dies with a VideoError that
+    # has nothing to do with camera shake. See HANDOFF: that interaction is a
+    # real create_proxy defect, not an artefact of this ladder, but the ladder
+    # must not trip over it while measuring something else.
     rungs = []
     for amp in (0, 2, 4, 8, 16, 32):
         vf = (f"crop=iw-{2*32}:ih-{2*32}:"
-              f"'32+{amp}*sin(n*1.7)':'32+{amp}*cos(n*2.3)'")
+              f"'32+{amp}*sin(n*1.7)':'32+{amp}*cos(n*2.3)',"
+              f"scale=iw+{2*32}:ih+{2*32}")
         rungs.append(Rung("shake", amp, vf, "any",
                           "stability_score = 100 - median_flow*16"))
     return rungs
 
 
-def rider_size_ladder() -> list[Rung]:
+def rider_size_ladder(width: int, height: int) -> list[Rung]:
     # Shrink the rider inside the frame. Hard failure is bbox_height < 0.12,
     # the recapture message says 20%, and the score normalizes against 0.35.
     # Three different numbers for one concept -- this ladder shows which binds.
+    #
+    # Target sizes are computed here rather than as ffmpeg expressions so they
+    # land on even integers (x264) and pad restores the *exact* original
+    # geometry. `scale=iw*k,pad=iw/k` re-derives the frame size from a rounded
+    # intermediate, and the drift is enough to change the aspect ratio and trip
+    # create_proxy's long-side bound -- see shake_ladder.
+    def _even(value: float) -> int:
+        return max(2, int(value) // 2 * 2)
+
     rungs = []
     for k in (1.0, 0.7, 0.5, 0.35, 0.25, 0.15):
-        vf = (f"scale=iw*{k}:ih*{k},"
-              f"pad=iw/{k}:ih/{k}:(ow-iw)/2:(oh-ih)/2:black")
+        w, h = _even(width * k), _even(height * k)
+        vf = (f"scale={w}:{h},"
+              f"pad={width}:{height}:{(width - w) // 2}:{(height - h) // 2}:black")
         expect = "rejected" if k <= 0.25 else "any"
         rungs.append(Rung("rider_size", k, vf, expect,
                           "bbox floor .12 vs message 20% vs scale ref .35"))
@@ -382,10 +400,14 @@ def main() -> int:
         frame_count = proxy_frame_count(clean)
         duration = probe_duration(clean)
         indices = sampler_indices(frame_count)
-        print(f"normalized: {frame_count} frames, {duration:.2f}s; "
+        from snowtrace_analysis.video import probe_video
+        meta = probe_video(clean)
+        print(f"normalized: {meta.width}x{meta.height} {meta.orientation}, "
+              f"{frame_count} frames, {duration:.2f}s; "
               f"sampler reads {indices}", flush=True)
 
-        rungs = (blur_ladder() + shake_ladder() + rider_size_ladder()
+        rungs = (blur_ladder() + shake_ladder()
+                 + rider_size_ladder(meta.width, meta.height)
                  + exposure_ladder() + turn_count_ladder(duration)
                  + sampling_evasion_ladder(indices))
         if args.only:
@@ -400,8 +422,19 @@ def main() -> int:
                     expected_indices=indices if rung.axis == "sampling_evasion" else None,
                     **kw,
                 ))
-            except ValueError as e:      # pipeline's own duration/track guards
-                print(f"    skipped: {e}", flush=True)
+            # A rung that blows up must not destroy the other 33. It is
+            # recorded as invalid rather than skipped silently: a rung missing
+            # from the report reads as "not run", while an invalid one says
+            # "run, measured nothing, here is why" -- and the why is often the
+            # finding (VideoError on the shake axis was how create_proxy's
+            # long-side bound surfaced).
+            except Exception as e:       # noqa: BLE001 - see above
+                print(f"    invalid: {type(e).__name__}: {e}", flush=True)
+                outcomes.append(Outcome(
+                    axis=rung.axis, severity=rung.severity, expect=rung.expect,
+                    status="error", readiness=0.0, blur=0.0, stability=0.0,
+                    exposure=0.0, invalid=f"{type(e).__name__}: {e}",
+                ))
     finally:
         if not args.keep:
             shutil.rmtree(tmp, ignore_errors=True)
