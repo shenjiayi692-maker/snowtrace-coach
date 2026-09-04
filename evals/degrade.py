@@ -65,9 +65,13 @@ class Outcome:
     exposure: float
     hard_failures: list[str] = field(default_factory=list)
     allowed_metrics: list[str] = field(default_factory=list)
+    invalid: str = ""     # non-empty means this rung measured nothing usable
+    note: str = ""        # e.g. rider selection had to be pinned by hand
 
     @property
     def ok(self) -> bool:
+        if self.invalid:
+            return False
         return self.expect == "any" or self.status == self.expect
 
 
@@ -139,7 +143,7 @@ def turn_count_ladder(duration: float) -> list[Rung]:
     return rungs
 
 
-def sampling_evasion_ladder(frame_count: int) -> list[Rung]:
+def sampling_evasion_ladder(indices: list[int]) -> list[Rung]:
     """Blur everything EXCEPT the frames the quality sampler happens to read.
 
     sample_visual_quality reads QUALITY_SAMPLE_COUNT frames at
@@ -148,16 +152,18 @@ def sampling_evasion_ladder(frame_count: int) -> list[Rung]:
     everywhere else should be caught -- if it is not, blur_score is measuring
     1.7% of the clip and the gate has a hole that no threshold change closes.
 
-    The index formula mirrors production exactly, including the truncating
-    `dtype=int` cast. Using int(round(...)) instead moves 4 of 10 positions on a
-    600-frame clip, which would blur the frames the sampler actually reads and
-    "confirm" the finding for the wrong reason.
+    Two things have to hold for this axis to mean anything, and both are now
+    enforced rather than assumed:
+
+      * the index expression must match production exactly, truncating cast
+        included -- int(round(...)) moves 4 of 10 positions on a 600-frame clip,
+        which blurs the frames the sampler actually reads and "confirms" the
+        finding for the wrong reason (see sampler_indices);
+      * frame n here must be frame n in the file the sampler opens -- see
+        normalize_source, and the post-run check in evaluate().
     """
-    if frame_count <= 0:
+    if not indices:
         return []
-    indices = np.linspace(
-        0, frame_count - 1, min(QUALITY_SAMPLE_COUNT, frame_count), dtype=int
-    ).tolist()
     keep = "+".join(f"eq(n\\,{i})" for i in indices)
     return [
         Rung("sampling_evasion", sigma,
@@ -170,34 +176,112 @@ def sampling_evasion_ladder(frame_count: int) -> list[Rung]:
 
 # --- execution --------------------------------------------------------------
 
-def probe_frame_count(video: Path) -> tuple[int, float]:
+def normalize_source(video: Path, work: Path) -> Path:
+    """Put the clean clip through create_proxy once, up front.
+
+    This is the fix for the coordinate-system half of the sampling_evasion
+    defect. Degradation filters are applied to whatever file we hand ffmpeg,
+    but sample_visual_quality reads the proxy the *pipeline* builds. If the
+    source is not already CFR 30 at proxy geometry, that step resamples and
+    every frame index we computed refers to a different timeline.
+
+    Normalizing first makes the pipeline's own create_proxy near-idempotent
+    (already 30 fps, already at or under the 720 bound), so frame n in the
+    rendered variant is frame n in the file the sampler opens.
+    """
+    from snowtrace_analysis.video import create_proxy
+
+    work.mkdir(parents=True, exist_ok=True)
+    return create_proxy(video, work / "normalized.mp4")
+
+
+def proxy_frame_count(path: Path) -> int:
+    """Frame count the way the sampler counts it.
+
+    sample_visual_quality uses cv2's CAP_PROP_FRAME_COUNT, not a duration x fps
+    estimate. Those disagree by a frame or two often enough to shift the
+    computed sample positions, which is the whole ballgame for this axis.
+    """
+    import cv2
+
+    capture = cv2.VideoCapture(str(path))
+    count = int(capture.get(cv2.CAP_PROP_FRAME_COUNT))
+    capture.release()
+    return count
+
+
+def sampler_indices(frame_count: int) -> list[int]:
+    """Exactly what video.sample_visual_quality will read -- same expression,
+    same truncating dtype=int cast. Any divergence here silently invalidates
+    the sampling_evasion result rather than failing."""
+    if frame_count <= 0:
+        return []
+    return np.linspace(
+        0, frame_count - 1, min(QUALITY_SAMPLE_COUNT, frame_count), dtype=int
+    ).tolist()
+
+
+def probe_duration(video: Path) -> float:
     out = subprocess.run(
         ["ffprobe", "-v", "error", "-select_streams", "v:0",
          "-show_entries", "format=duration", "-of", "json", str(video)],
         check=True, capture_output=True, text=True,
     )
-    duration = float(json.loads(out.stdout)["format"]["duration"])
-    return int(duration * PROXY_FPS), duration
+    return float(json.loads(out.stdout)["format"]["duration"])
 
 
 def render(source: Path, rung: Rung, out_dir: Path) -> Path:
     dest = out_dir / f"{rung.axis}_{rung.severity}.mp4"
     subprocess.run(
+        # -r / -fps_mode cfr pin the timebase so a rung cannot quietly change
+        # the frame count it is not trying to change. turn_count is the one
+        # axis that does alter duration, and it does so explicitly via trim.
         ["ffmpeg", "-y", "-v", "error", "-i", str(source),
          "-vf", rung.vfilter, "-an",
          "-c:v", "libx264", "-preset", "veryfast", "-crf", "18",
-         "-pix_fmt", "yuv420p", str(dest)],
+         "-pix_fmt", "yuv420p", "-r", str(PROXY_FPS), "-fps_mode", "cfr",
+         str(dest)],
         check=True, capture_output=True, text=True,
     )
     return dest
 
 
-def evaluate(rung: Rung, clip: Path, model: Path, work: Path, **kw) -> Outcome:
+def evaluate(rung: Rung, clip: Path, model: Path, work: Path,
+             expected_indices: list[int] | None = None, **kw) -> Outcome:
     from snowtrace_analysis.pipeline import AnalysisPipeline
 
     pipeline = AnalysisPipeline(model_path=model, work_dir=work)
     result = pipeline.analyze_video(clip, role="rider", **kw)
+
+    # Degradation destabilises tracking, so heavier rungs come back
+    # `needs_rider` and never reach the gate at all. That is rider-selection
+    # noise masking the thing under test: without this retry the ladder
+    # measures where the tracker gives up, not where the gate reacts. Retry on
+    # the top-scoring candidate and record that we had to.
+    note = ""
+    if result.status == "needs_rider" and result.rider_candidates:
+        chosen = result.rider_candidates[0]["track_id"]
+        note = f"ambiguous selection; pinned to track {chosen}"
+        result = pipeline.analyze_video(
+            clip, role="rider", selected_track_id=chosen, **kw
+        )
     q = result.quality
+
+    # The sampling_evasion axis is only meaningful if the frames we sharpened
+    # are the frames the sampler reads. normalize_source is supposed to
+    # guarantee that; this checks it against the proxy the pipeline actually
+    # built, so a broken assumption shows up as an invalid rung instead of a
+    # confident wrong verdict.
+    invalid = ""
+    if result.status == "needs_rider":
+        invalid = "no usable rider track after degradation"
+    if expected_indices is not None:
+        actual = sampler_indices(proxy_frame_count(result.proxy_path))
+        if actual != expected_indices:
+            invalid = (
+                f"frame indices drifted: sharpened {expected_indices}, "
+                f"sampler reads {actual}"
+            )
     # The three capture scores are already on the gate result, keyed by check
     # id. Re-running sample_visual_quality + estimate_camera_stability here
     # would repeat the two most expensive calls in the loop and introduce a
@@ -212,6 +296,8 @@ def evaluate(rung: Rung, clip: Path, model: Path, work: Path, **kw) -> Outcome:
         exposure=scores.get("exposure", 0.0),
         hard_failures=list(q.hard_failures) if q else [],
         allowed_metrics=list(q.allowed_metrics) if q else [],
+        invalid=invalid,
+        note=note,
     )
 
 
@@ -227,7 +313,7 @@ def report(outcomes: list[Outcome]) -> str:
                   "| severity | blur | stab | expo | readiness | status | expected |",
                   "|---|---|---|---|---|---|---|"]
         for o in group:
-            mark = "" if o.ok else "  **MISS**"
+            mark = "  **INVALID**" if o.invalid else "" if o.ok else "  **MISS**"
             lines.append(
                 f"| {o.severity} | {o.blur:.0f} | {o.stability:.0f} | "
                 f"{o.exposure:.0f} | {o.readiness:.0f} | `{o.status}`{mark} | "
@@ -239,7 +325,17 @@ def report(outcomes: list[Outcome]) -> str:
         ]
         lines += ["", f"Flip points: {flips or 'none -- gate never reacted'}", ""]
 
-    misses = [o for o in outcomes if not o.ok]
+    invalid = [o for o in outcomes if o.invalid]
+    if invalid:
+        lines += ["## Invalid rungs -- measured nothing usable", ""]
+        for o in invalid:
+            lines.append(f"- `{o.axis}` at {o.severity}: {o.invalid}")
+        lines += ["", "An invalid rung is not a pass and not a failure. Its "
+                      "verdict says nothing about the gate, and reading it as "
+                      "either is how a broken harness gets mistaken for a "
+                      "finding.", ""]
+
+    misses = [o for o in outcomes if not o.ok and not o.invalid]
     lines += ["## Failures", ""]
     if misses:
         for o in misses:
@@ -273,13 +369,6 @@ def main() -> int:
         if shutil.which(exe) is None:
             raise SystemExit(f"{exe} is required")
 
-    frame_count, duration = probe_frame_count(args.video)
-    rungs = (blur_ladder() + shake_ladder() + rider_size_ladder()
-             + exposure_ladder() + turn_count_ladder(duration)
-             + sampling_evasion_ladder(frame_count))
-    if args.only:
-        rungs = [r for r in rungs if r.axis in args.only]
-
     kw = dict(camera_mode=args.camera_mode, stance=args.stance,
               view_angle=args.view_angle, travel_direction=args.travel_direction,
               first_edge=args.first_edge)
@@ -287,11 +376,30 @@ def main() -> int:
     tmp = Path(tempfile.mkdtemp(prefix="snowtrace-l1-"))
     outcomes: list[Outcome] = []
     try:
+        # Every rung starts from the normalized clip, not the raw source, so
+        # frame indices mean the same thing here and inside the gate.
+        clean = normalize_source(args.video, tmp)
+        frame_count = proxy_frame_count(clean)
+        duration = probe_duration(clean)
+        indices = sampler_indices(frame_count)
+        print(f"normalized: {frame_count} frames, {duration:.2f}s; "
+              f"sampler reads {indices}", flush=True)
+
+        rungs = (blur_ladder() + shake_ladder() + rider_size_ladder()
+                 + exposure_ladder() + turn_count_ladder(duration)
+                 + sampling_evasion_ladder(indices))
+        if args.only:
+            rungs = [r for r in rungs if r.axis in args.only]
+
         for i, rung in enumerate(rungs, 1):
             print(f"[{i}/{len(rungs)}] {rung.axis} @ {rung.severity}", flush=True)
-            clip = render(args.video, rung, tmp)
+            clip = render(clean, rung, tmp)
             try:
-                outcomes.append(evaluate(rung, clip, args.model, tmp / "work", **kw))
+                outcomes.append(evaluate(
+                    rung, clip, args.model, tmp / "work",
+                    expected_indices=indices if rung.axis == "sampling_evasion" else None,
+                    **kw,
+                ))
             except ValueError as e:      # pipeline's own duration/track guards
                 print(f"    skipped: {e}", flush=True)
     finally:
