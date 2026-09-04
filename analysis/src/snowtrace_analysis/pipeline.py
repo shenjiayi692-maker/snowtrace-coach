@@ -11,10 +11,21 @@ from .video import create_proxy, estimate_camera_stability, probe_video, sample_
 
 
 class AnalysisPipeline:
-    def __init__(self, model_path: str | Path, work_dir: str | Path):
+    def __init__(
+        self,
+        model_path: str | Path,
+        work_dir: str | Path,
+        quality_seed: int | None = None,
+    ):
         self.model_path = Path(model_path).resolve()
         self.work_dir = Path(work_dir).resolve()
         self.work_dir.mkdir(parents=True, exist_ok=True)
+        # Jitter seed for quality frame sampling. None draws fresh offsets per
+        # run, which is what makes the sample positions unguessable; pass an int
+        # to make a run reproducible. The eval pins it so its ladder is
+        # deterministic without production inheriting fixed, derivable
+        # positions -- the exact weakness that made the old sampler evadable.
+        self.quality_seed = quality_seed
 
     def analyze_video(
         self,
@@ -101,9 +112,13 @@ class AnalysisPipeline:
         # always H.264, while the source may be a codec this OpenCV build cannot
         # open. Camera stability stays on the proxy deliberately -- it needs the
         # normalized CFR 30 timebase to compare frames a fixed interval apart.
-        blur_score, exposure_score = sample_visual_quality(metadata.path)
+        blur_score, exposure_score = sample_visual_quality(
+            metadata.path, seed=self.quality_seed
+        )
         if (blur_score, exposure_score) == (0.0, 0.0):
-            blur_score, exposure_score = sample_visual_quality(proxy_path)
+            blur_score, exposure_score = sample_visual_quality(
+                proxy_path, seed=self.quality_seed
+            )
         stability_score = estimate_camera_stability(proxy_path)
         quality = build_quality_gate(
             selected,

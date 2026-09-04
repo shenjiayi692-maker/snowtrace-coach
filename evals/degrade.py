@@ -25,7 +25,8 @@ anything.
 
 Usage:
     python -m evals.degrade --video clean.mp4 --model pose_landmarker.task
-    python -m evals.degrade --video clean.mp4 --model m.task --only sampling_evasion
+    python -m evals.degrade --video clean.mp4 --model m.task \
+        --only evasion_blind evasion_oracle
 """
 
 from __future__ import annotations
@@ -40,9 +41,6 @@ from pathlib import Path
 
 import numpy as np
 
-# Deterministic sample positions used by video.sample_visual_quality.
-# Kept in sync deliberately: if the production sampler changes, this must fail.
-QUALITY_SAMPLE_COUNT = 10
 PROXY_FPS = 30
 
 
@@ -163,34 +161,35 @@ def turn_count_ladder(duration: float) -> list[Rung]:
     return rungs
 
 
-def sampling_evasion_ladder(indices: list[int]) -> list[Rung]:
-    """Blur everything EXCEPT the frames the quality sampler happens to read.
+def sampling_evasion_ladder(indices: list[int], label: str = "sampling_evasion") -> list[Rung]:
+    """Blur everything EXCEPT `indices`, the frames an attacker bets on.
 
-    sample_visual_quality reads QUALITY_SAMPLE_COUNT frames at
-    np.linspace(0, frame_count-1, ..., dtype=int). Those positions are fixed and
-    knowable. A clip that is sharp at exactly those indices and blurred
-    everywhere else should be caught -- if it is not, blur_score is measuring
-    1.7% of the clip and the gate has a hole that no threshold change closes.
+    Run twice, against two attackers, because the fix and the residual risk are
+    different things and one axis cannot show both:
 
-    Two things have to hold for this axis to mean anything, and both are now
-    enforced rather than assumed:
+      * **blind** -- indices from a seed the gate is not using. This is the
+        realistic case, and it is what the fix is supposed to defeat: not
+        knowing the jitter, the attacker cannot pick which frames to keep sharp,
+        so the gate's samples land mostly on blurred frames and blur_score
+        collapses the way it does under uniform blur.
+      * **oracle** -- indices from the gate's actual seed. This is expected to
+        still evade, and saying so plainly matters: density alone does not fix
+        the hole, **seed secrecy is load-bearing**. If the seed ever becomes
+        fixed, public, or derivable from the file, the hole is fully reopened.
 
-      * the index expression must match production exactly, truncating cast
-        included -- int(round(...)) moves 4 of 10 positions on a 600-frame clip,
-        which blurs the frames the sampler actually reads and "confirms" the
-        finding for the wrong reason (see sampler_indices);
-      * frame n here must be frame n in the file the sampler opens -- direct
-        now that the gate samples its source, and verified after the fact by
-        the index check in evaluate().
+    Read the blur column, not the status. Heavy blur also destroys pose
+    tracking, so both variants can end `rejected` for reasons that have nothing
+    to do with the blur check -- which is exactly how the pre-fix run looked
+    like a pass while the check was being walked straight past.
     """
     if not indices:
         return []
     keep = "+".join(f"eq(n\\,{i})" for i in indices)
     return [
-        Rung("sampling_evasion", sigma,
+        Rung(label, sigma,
              f"gblur=sigma={sigma}:enable='not({keep})'",
-             "rejected",
-             f"sharp only at frames {indices}; the rest at sigma={sigma}")
+             "any",
+             f"sharp at {len(indices)} frames; the rest at sigma={sigma}")
         for sigma in (8, 16)
     ]
 
@@ -212,15 +211,19 @@ def proxy_frame_count(path: Path) -> int:
     return count
 
 
-def sampler_indices(frame_count: int) -> list[int]:
-    """Exactly what video.sample_visual_quality will read -- same expression,
-    same truncating dtype=int cast. Any divergence here silently invalidates
-    the sampling_evasion result rather than failing."""
-    if frame_count <= 0:
-        return []
-    return np.linspace(
-        0, frame_count - 1, min(QUALITY_SAMPLE_COUNT, frame_count), dtype=int
-    ).tolist()
+def sampler_indices(frame_count: int, seed: int | None) -> list[int]:
+    """Delegate to the production sampler rather than reimplementing it.
+
+    The first version of this file duplicated the index expression so that a
+    change in production would break the eval loudly. That was right when the
+    expression was one line of linspace. It is now stride-plus-seeded-jitter,
+    and a second implementation would drift into agreeing with itself rather
+    than with the gate. Alignment is still verified after every rung -- see
+    evaluate() -- so drift shows up as an invalid rung, not a silent pass.
+    """
+    from snowtrace_analysis.video import quality_sample_indices
+
+    return quality_sample_indices(frame_count, seed=seed)
 
 
 def probe_duration(video: Path) -> float:
@@ -249,10 +252,11 @@ def render(source: Path, rung: Rung, out_dir: Path) -> Path:
 
 
 def evaluate(rung: Rung, clip: Path, model: Path, work: Path,
-             expected_indices: list[int] | None = None, **kw) -> Outcome:
+             expected_indices: list[int] | None = None,
+             seed: int | None = None, **kw) -> Outcome:
     from snowtrace_analysis.pipeline import AnalysisPipeline
 
-    pipeline = AnalysisPipeline(model_path=model, work_dir=work)
+    pipeline = AnalysisPipeline(model_path=model, work_dir=work, quality_seed=seed)
     result = pipeline.analyze_video(clip, role="rider", **kw)
 
     # Degradation destabilises tracking, so heavier rungs come back
@@ -281,7 +285,7 @@ def evaluate(rung: Rung, clip: Path, model: Path, work: Path,
         # Check against the clip the gate was handed, which is the file
         # sample_visual_quality now opens -- not result.proxy_path, which it
         # only falls back to when the source cannot be decoded.
-        actual = sampler_indices(proxy_frame_count(clip))
+        actual = sampler_indices(proxy_frame_count(clip), seed)
         if actual != expected_indices:
             invalid = (
                 f"frame indices drifted: sharpened {expected_indices}, "
@@ -374,6 +378,9 @@ def main() -> int:
     ap.add_argument("--travel-direction", default="left-to-right")
     ap.add_argument("--first-edge", default="unknown")
     ap.add_argument("--keep", action="store_true", help="keep rendered variants")
+    ap.add_argument("--seed", type=int, default=20260904,
+                    help="pins the gate's quality-sampling jitter so the ladder "
+                         "is reproducible; production leaves it unset")
     args = ap.parse_args()
 
     for exe in ("ffmpeg", "ffprobe"):
@@ -400,17 +407,28 @@ def main() -> int:
         clean = args.video
         frame_count = proxy_frame_count(clean)
         duration = probe_duration(clean)
-        indices = sampler_indices(frame_count)
         from snowtrace_analysis.video import probe_video
         meta = probe_video(clean)
-        print(f"normalized: {meta.width}x{meta.height} {meta.orientation}, "
-              f"{frame_count} frames, {duration:.2f}s; "
-              f"sampler reads {indices}", flush=True)
+
+        # The gate's sample positions, pinned so the ladder is reproducible.
+        gate_indices = sampler_indices(frame_count, args.seed)
+        # What an attacker who guessed the seed wrong would sharpen. Any seed
+        # the gate is not using will do; +1 makes the relationship obvious.
+        blind_indices = sampler_indices(frame_count, args.seed + 1)
+        overlap = len(set(gate_indices) & set(blind_indices))
+
+        print(f"source: {meta.width}x{meta.height} {meta.orientation}, "
+              f"{frame_count} frames, {duration:.2f}s", flush=True)
+        print(f"gate samples {len(gate_indices)} frames "
+              f"({len(gate_indices) / frame_count:.0%} of the clip) at seed "
+              f"{args.seed}; a wrong-seed attacker overlaps on {overlap} of them",
+              flush=True)
 
         rungs = (blur_ladder() + shake_ladder()
                  + rider_size_ladder(meta.width, meta.height)
                  + exposure_ladder() + turn_count_ladder(duration)
-                 + sampling_evasion_ladder(indices))
+                 + sampling_evasion_ladder(blind_indices, "evasion_blind")
+                 + sampling_evasion_ladder(gate_indices, "evasion_oracle"))
         if args.only:
             rungs = [r for r in rungs if r.axis in args.only]
 
@@ -420,7 +438,9 @@ def main() -> int:
             try:
                 outcomes.append(evaluate(
                     rung, clip, args.model, tmp / "work",
-                    expected_indices=indices if rung.axis == "sampling_evasion" else None,
+                    expected_indices=(gate_indices
+                                      if rung.axis.startswith("evasion_") else None),
+                    seed=args.seed,
                     **kw,
                 ))
             # A rung that blows up must not destroy the other 33. It is

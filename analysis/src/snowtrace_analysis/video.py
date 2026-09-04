@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import random
 import subprocess
 from pathlib import Path
 
@@ -141,7 +142,51 @@ def _validate_proxy(source: VideoMetadata, proxy: VideoMetadata) -> None:
         raise VideoError("Portrait analysis proxy exceeds the 720x1280 bound.")
 
 
-def sample_visual_quality(path: str | Path, sample_count: int = 10) -> tuple[float, float]:
+DEFAULT_QUALITY_SAMPLES = 200
+
+
+def quality_sample_indices(
+    frame_count: int,
+    sample_count: int = DEFAULT_QUALITY_SAMPLES,
+    seed: int | None = None,
+) -> list[int]:
+    """One jittered frame per stride window, covering the whole clip.
+
+    The previous scheme read `np.linspace(0, frame_count - 1, 10)` -- ten fixed,
+    publicly derivable positions. A clip left sharp at exactly those indices and
+    blurred everywhere else scored 53 against 54 for genuinely clean footage,
+    while the same blur applied uniformly scored 1. The blur verdict for an
+    810-frame clip was decided by 1.2% of it, at positions anyone could compute.
+
+    Two changes close that, and both are needed:
+
+      * **density** -- one sample per stride window instead of ten for the whole
+        clip, so the median describes the footage rather than a thin slice;
+      * **jitter** -- the offset inside each window comes from `seed`, so an
+        attacker who does not know it cannot pick the frames to keep sharp. To
+        be safe against every possible offset they would have to sharpen every
+        frame in every window, which is just filming a sharp clip.
+
+    Density without jitter is still evadable, and jitter without density is
+    still a thin sample. `seed=None` draws a fresh offset per run; pass an int
+    to pin it, which is what the eval does.
+    """
+    if frame_count <= 0:
+        return []
+    count = max(1, min(sample_count, frame_count))
+    stride = max(1, frame_count // count)
+    rng = random.Random(seed)
+    return [
+        min(frame_count - 1, start + rng.randrange(min(stride, frame_count - start)))
+        for start in range(0, frame_count, stride)
+    ]
+
+
+def sample_visual_quality(
+    path: str | Path,
+    sample_count: int = DEFAULT_QUALITY_SAMPLES,
+    seed: int | None = None,
+) -> tuple[float, float]:
     try:
         import cv2
     except ImportError as error:
@@ -152,19 +197,25 @@ def sample_visual_quality(path: str | Path, sample_count: int = 10) -> tuple[flo
     if frame_count <= 0:
         capture.release()
         return 0.0, 0.0
-    indices = np.linspace(0, frame_count - 1, min(sample_count, frame_count), dtype=int)
+    wanted = set(quality_sample_indices(frame_count, sample_count, seed))
     blur_values: list[float] = []
     exposure_values: list[float] = []
-    for index in indices:
-        capture.set(cv2.CAP_PROP_POS_FRAMES, int(index))
+    # Sequential decode, not per-frame seeking. CAP_PROP_POS_FRAMES costs about
+    # 36ms a seek here, so ten seeks took longer than decoding the entire clip:
+    # reading straight through samples 200 frames in less time than seeking 60.
+    # Density was cheaper than the sparse sampling it replaces was ever worth.
+    index = 0
+    while True:
         ok, frame = capture.read()
         if not ok:
-            continue
-        gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-        variance = float(cv2.Laplacian(gray, cv2.CV_64F).var())
-        mean = float(gray.mean())
-        blur_values.append(min(100.0, variance / 4.0))
-        exposure_values.append(_range_score(mean, 70.0, 205.0, 25.0, 245.0))
+            break
+        if index in wanted:
+            gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+            variance = float(cv2.Laplacian(gray, cv2.CV_64F).var())
+            mean = float(gray.mean())
+            blur_values.append(min(100.0, variance / 4.0))
+            exposure_values.append(_range_score(mean, 70.0, 205.0, 25.0, 245.0))
+        index += 1
     capture.release()
     if not blur_values:
         return 0.0, 0.0
