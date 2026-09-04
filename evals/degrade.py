@@ -15,11 +15,13 @@ land on the thresholds rather than guessed:
     stability_score = 100 - median_optical_flow * 16        -> 50 at flow 3.125
     exposure_score  = range_score(mean_gray, 70, 205, 25, 245)
 
-NOT YET RUN. See HANDOFF.md section 4.1: the `sampling_evasion` axis still has
-an unresolved coordinate-system defect (filters are applied to the source, the
-sampler reads the proxy). The index-rounding half of that defect is fixed here;
-the fps/proxy half is not, and it changes the intent of the axis rather than its
-syntax, so it is left for an explicit decision.
+Rungs are rendered from the raw source and handed straight to the pipeline. The
+gate samples blur and exposure from the source it is given, so the file this
+module filters is the file the sampler opens -- frame n means the same thing on
+both sides with no normalization step in between. evaluate() re-derives the
+sampler positions from that file anyway and marks the rung invalid if they
+disagree, because that alignment is the only thing making sampling_evasion mean
+anything.
 
 Usage:
     python -m evals.degrade --video clean.mp4 --model pose_landmarker.task
@@ -88,16 +90,16 @@ def blur_ladder() -> list[Rung]:
 
 
 def shake_ladder() -> list[Rung]:
-    # Deterministic sinusoidal crop offset. Amplitude in source pixels; the
-    # proxy downscale to 720p reduces effective flow, which is the point --
-    # stability is measured post-normalization, like in production.
-    # The crop must be scaled straight back to the original geometry. Cropping
-    # alone makes the frame *more* elongated, and create_proxy only ever scales
-    # the short side to 720 -- so a portrait clip near 16:9 gets pushed past the
-    # validator's 1280 long-side bound and the rung dies with a VideoError that
-    # has nothing to do with camera shake. See HANDOFF: that interaction is a
-    # real create_proxy defect, not an artefact of this ladder, but the ladder
-    # must not trip over it while measuring something else.
+    # Deterministic sinusoidal crop offset, amplitude in source pixels.
+    #
+    # The crop is scaled straight back to the original geometry. Cropping alone
+    # makes a frame more elongated, and this is what first surfaced the
+    # create_proxy aspect-ratio defect (HANDOFF 8.7): the old scale expression
+    # pinned the short side to 720 and left the long side unbounded, so a
+    # portrait clip near 16:9 was pushed past _validate_proxy's 1280 bound and
+    # the rung died with a VideoError about nothing to do with camera shake.
+    # That is fixed in video.py now, but restoring the geometry is still right:
+    # this axis should vary camera motion and nothing else.
     rungs = []
     for amp in (0, 2, 4, 8, 16, 32):
         vf = (f"crop=iw-{2*32}:ih-{2*32}:"
@@ -177,8 +179,9 @@ def sampling_evasion_ladder(indices: list[int]) -> list[Rung]:
         included -- int(round(...)) moves 4 of 10 positions on a 600-frame clip,
         which blurs the frames the sampler actually reads and "confirms" the
         finding for the wrong reason (see sampler_indices);
-      * frame n here must be frame n in the file the sampler opens -- see
-        normalize_source, and the post-run check in evaluate().
+      * frame n here must be frame n in the file the sampler opens -- direct
+        now that the gate samples its source, and verified after the fact by
+        the index check in evaluate().
     """
     if not indices:
         return []
@@ -193,25 +196,6 @@ def sampling_evasion_ladder(indices: list[int]) -> list[Rung]:
 
 
 # --- execution --------------------------------------------------------------
-
-def normalize_source(video: Path, work: Path) -> Path:
-    """Put the clean clip through create_proxy once, up front.
-
-    This is the fix for the coordinate-system half of the sampling_evasion
-    defect. Degradation filters are applied to whatever file we hand ffmpeg,
-    but sample_visual_quality reads the proxy the *pipeline* builds. If the
-    source is not already CFR 30 at proxy geometry, that step resamples and
-    every frame index we computed refers to a different timeline.
-
-    Normalizing first makes the pipeline's own create_proxy near-idempotent
-    (already 30 fps, already at or under the 720 bound), so frame n in the
-    rendered variant is frame n in the file the sampler opens.
-    """
-    from snowtrace_analysis.video import create_proxy
-
-    work.mkdir(parents=True, exist_ok=True)
-    return create_proxy(video, work / "normalized.mp4")
-
 
 def proxy_frame_count(path: Path) -> int:
     """Frame count the way the sampler counts it.
@@ -286,15 +270,18 @@ def evaluate(rung: Rung, clip: Path, model: Path, work: Path,
     q = result.quality
 
     # The sampling_evasion axis is only meaningful if the frames we sharpened
-    # are the frames the sampler reads. normalize_source is supposed to
-    # guarantee that; this checks it against the proxy the pipeline actually
-    # built, so a broken assumption shows up as an invalid rung instead of a
+    # are the frames the sampler reads. That should hold by construction now,
+    # which is exactly why it is worth checking: a broken assumption that is
+    # never tested shows up as a confident wrong verdict instead of an
     # confident wrong verdict.
     invalid = ""
     if result.status == "needs_rider":
         invalid = "no usable rider track after degradation"
     if expected_indices is not None:
-        actual = sampler_indices(proxy_frame_count(result.proxy_path))
+        # Check against the clip the gate was handed, which is the file
+        # sample_visual_quality now opens -- not result.proxy_path, which it
+        # only falls back to when the source cannot be decoded.
+        actual = sampler_indices(proxy_frame_count(clip))
         if actual != expected_indices:
             invalid = (
                 f"frame indices drifted: sharpened {expected_indices}, "
@@ -328,14 +315,20 @@ def report(outcomes: list[Outcome]) -> str:
     for axis, group in by_axis.items():
         group.sort(key=lambda o: o.severity)
         lines += [f"## {axis}", "",
-                  "| severity | blur | stab | expo | readiness | status | expected |",
-                  "|---|---|---|---|---|---|---|"]
+                  "| severity | blur | stab | expo | readiness | status | "
+                  "hard failures | expected |",
+                  "|---|---|---|---|---|---|---|---|"]
         for o in group:
             mark = "  **INVALID**" if o.invalid else "" if o.ok else "  **MISS**"
+            # Without this column a `rejected` row reads as "the axis worked",
+            # when the rejection often comes from somewhere the axis never
+            # touched. Naming the cause is the difference between a finding and
+            # a coincidence.
+            causes = ", ".join(f"`{f}`" for f in o.hard_failures) or "—"
             lines.append(
                 f"| {o.severity} | {o.blur:.0f} | {o.stability:.0f} | "
                 f"{o.exposure:.0f} | {o.readiness:.0f} | `{o.status}`{mark} | "
-                f"{o.expect} |"
+                f"{causes} | {o.expect} |"
             )
         flips = [
             (b.severity, a.status, b.status)
@@ -394,9 +387,17 @@ def main() -> int:
     tmp = Path(tempfile.mkdtemp(prefix="snowtrace-l1-"))
     outcomes: list[Outcome] = []
     try:
-        # Every rung starts from the normalized clip, not the raw source, so
-        # frame indices mean the same thing here and inside the gate.
-        clean = normalize_source(args.video, tmp)
+        # Rungs are rendered from the raw source, not from a normalized copy.
+        #
+        # Normalizing first was the original fix for the coordinate-system half
+        # of the sampling_evasion defect: the gate sampled the proxy, so the
+        # source had to already be at proxy geometry for frame n to mean the
+        # same thing on both sides. The gate now samples the SOURCE it is handed
+        # (see pipeline.py), which is the file we render here -- alignment is
+        # direct and pre-normalizing would be actively harmful, since it would
+        # hand the gate an upscaled clip and re-create the very blur collapse
+        # that fix removed.
+        clean = args.video
         frame_count = proxy_frame_count(clean)
         duration = probe_duration(clean)
         indices = sampler_indices(frame_count)

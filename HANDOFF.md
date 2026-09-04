@@ -532,19 +532,155 @@ thesis than any of A–E.
   - L0 默认 step 由 5 改 10(真实 fixture 下 82s→6分30秒→57s),进 90s 预算
   - 修好 §4.1 坐标系问题**并让该假设可证伪**:采样位置对不上就标 INVALID,不再当成结论
   - 修好 shake / rider_size 的几何漂移;单个 rung 崩溃不再毁掉整轮
-- **L1 查出三个新缺陷,都比 claim A–E 更要命**:
-  - **§8.1 `create_proxy` 上采样毁掉它自己要判的 blur 信号** —— 246.8 → 21.8 方差,blur_score 61.7 → 5.4。闸门据此判"运动模糊"并让骑手去改拍摄手法,而问题是 pipeline 自己造的。这是失败模式 (1) 给出错误建议,发生位置正是本文 §1 预测的上游
-  - **§8.2 `estimate_camera_stability` 几乎测不到抖动** —— 逐帧像素位移 4 倍变化,分数只动 1.6 分。中位光流在低纹理雪面上被无纹理区主导
-  - **§8.7 `create_proxy` 拒收比 16:9 更细长的竖屏** —— 1080x2340(19.5:9,普通手机比例)直接 VideoError,报错信息不提宽高比
+  - **§8.1 / §8.7 两个生产缺陷已修**(`pipeline.py` 改测源片、`video.py` 改装盒缩放),`analysis/tests/` 全程 45/45,一个测试都没改
+  - **修完重跑 L1**(§9):同一段素材从 `limited`(80)变成 **`full`(86)**
+  - **claim E 确认且可利用**(§9.2):只留 10/810 帧锐利,blur_score = 53,干净基线 54,均匀模糊是 1
+  - **§9.3 是最结构性的发现**:34 个 rung 里**全部** `rejected` 都来自追踪崩溃,没有一次来自 blur/stability/exposure —— 这两个检查在 `quality.py` 里压根没有硬失败,最多降到 `limited`
 - 下一步:
-  - 三个新缺陷按 §6 只提议未改动,**等你决定改哪个**。§8.1 的修法是一个表达式(禁止上采样),但改完 blur 阈值 50 要重新标定,整条 L1 全部数字都会变
-  - **claim E 仍未验证** —— 本片 blur 恒在 5 附近,采样绕过测不出来。需要短边 ≥720 的原生素材
-  - `rider_size` 轴的 blur 列是在测黑边不是测画面(pad 边缘抬高 Laplacian 方差),重跑该轴前要修
-  - Phase 3 (L2 不变性) / Phase 4 (L3 弃权) 尚未编写
+  - **§8.2 仍未修**(stability 对抖动近乎失明,抖 4 倍分数动 5 分),这是度量设计问题不是阈值问题
+  - **claim E 的修复没做**:要改采样器(随机化或大幅加密采样),按原 handoff 约定要带 seed 且 eval 里固定;改完 **L1 全部要重跑**
+  - blur 阈值 50 值得重新标定:干净基线 54,只有 4 分余量,而 sigma 0.5 的轻微模糊就掉到 33
+  - `rider_size` 轴的 blur 列无效(黑边 pad 抬高方差,k=0.7 读到 100),重跑该轴前要修 harness
+  - `turn_count` 的 expect 值是错的(两个 MISS 都是梯子的错),需要按实际片长重设
+  - Phase 3 (L2 不变性) / Phase 4 (L3 弃权) 尚未编写。§9.3 指出 L3 该瞄准的地方:真正放行坏素材的不是阈值太松,是追踪在 landmark 不可信时仍然"成功"
   - `evals/README.md` 尚未落盘
 - 残留状态:
-  - `quality.py` 是唯一改动过的生产文件,行为等价(字面量 3 → 具名 `MIN_TURNS = 3`)
-  - **所有 L1 数字都继承一个上限**:fixture 源片是 320x568,proxy 上采样到 720x1278。这正是 §8.1 的病灶,也意味着这批数字在换到原生高分素材后必须重测
+  - 改动过的生产文件三个:`quality.py`(具名 `MIN_TURNS = 3`,行为等价)、`pipeline.py`(blur 改测源片)、`video.py`(缩放改装盒)
+  - **L1 数字仍继承素材上限**:源片 320x568,虽然 blur 不再受上采样污染,但 landmark 质量还是受限于 320 行。换原生高分素材后要重测
   - C.2 无法从当前 fixture 复现(sweep 里无 rejected),确认停留在记录上
   - `evals/out/` 全是生成物且被 gitignore,不进仓库
   - 无未跑的迁移、无未填的 key、无起着的服务
+
+---
+
+## 9. Post-fix L1 (2026-09-04)
+
+Two fixes applied to `analysis/`, then the full ladder re-run. `analysis/tests/`
+stayed 45/45 through both — no test needed changing.
+
+### 9.1 What was fixed, and a corrected recommendation
+
+**§8.1 — the recommendation in §8.1 was wrong and is superseded.** It proposed
+clamping the proxy scale so it never upscales. But `test_video.py:74` asserts a
+360x640 source becomes a 720x1280 proxy, and `lib/analysis.ts` ships "720p
+analysis proxy" as user-facing copy: **upscaling is deliberate contract, not an
+oversight.** The defect is not that the pipeline upscales — it is that the gate
+*measured sharpness on the upscaled copy*.
+
+Fixed in `pipeline.py`: `sample_visual_quality` now reads the source. Sharpness
+is a property of what the rider filmed; the proxy exists for pose extraction.
+`estimate_camera_stability` deliberately stays on the proxy — it compares frames
+a fixed interval apart and needs the normalized CFR 30 timebase. A fallback to
+the proxy covers sources this OpenCV build cannot decode.
+
+**§8.7** fixed in `video.py`: the scale expression now fits inside the
+orientation's bound box instead of pinning the short side to 720 and leaving the
+long side unconstrained. Verified identical output for every ratio at or inside
+16:9; a 1080x2340 source goes from failing outright to a 590x1280 proxy.
+
+Effect on the fixture: the same footage moved from `limited` (readiness 80) to
+**`full` (readiness 86)**.
+
+**Knock-on to the eval:** §4.1's fix became actively harmful. L1 normalized the
+clip before rendering rungs so frame indices would match the proxy the gate
+sampled. Now the gate samples the source it is handed, so pre-normalizing would
+hand it an upscaled clip and re-create the blur collapse the fix removed.
+`normalize_source` is deleted; rungs render from the raw source; the index check
+in `evaluate()` stays, now verifying the file actually sampled. **The check is
+worth more now that alignment holds by construction** — an untested assumption
+fails silently.
+
+### 9.2 Claim E — CONFIRMED, decisively
+
+Same clip, same sigma, one difference: whether the ten frames the sampler reads
+were left sharp.
+
+| | sigma 8 | sigma 16 |
+|---|---|---|
+| uniform blur (`blur` axis) | `blur_score` **1** | — |
+| sharp only at the sampled indices | `blur_score` **53** | **56** |
+| clean baseline | 54 | 54 |
+
+**A clip blurred everywhere except 10 of its 810 frames scores 53, against 54
+for genuinely clean footage.** The same blur applied uniformly scores 1. The
+blur verdict is decided by 1.2% of the clip at positions any caller can compute
+from `np.linspace`. No threshold change closes this; the sampler has to change.
+
+This was untestable before the §8.1 fix — `blur_score` was pinned near 5, so
+sharpened and blurred frames were indistinguishable to a metric already on the
+floor. §8.3's "untestable" is now superseded.
+
+**Honest limit:** both rungs did end `rejected` — via `pose_coverage`,
+`critical_landmarks` and `insufficient_turns`. **Never via blur.** The evasion
+fully defeated the check it targeted; the rejection was collateral damage from
+blur wrecking pose tracking. A more surgical attack — blurred enough to fail the
+blur check, not enough to break tracking, sharp at the ten indices — would pass.
+The ladder demonstrates the mechanism, not the worst case.
+
+### 9.3 The finding that reframes the rest: capture checks never reject anything
+
+With hard-failure causes now in the report, every `rejected` row across all 34
+rungs was attributable:
+
+| axis | severity | cause |
+|---|---|---|
+| blur | 5, 8, 12 | `pose_coverage`, `critical_landmarks`, `insufficient_turns` |
+| shake | 32 | `pose_coverage` |
+| rider_size | ≤ 0.5 | `rider_not_found` |
+| exposure | −0.6 | `no_visible_metrics` |
+| exposure | −0.4, −0.2 | `insufficient_turns` |
+| exposure | +0.6 | `rider_too_small`, `insufficient_turns` |
+| sampling_evasion | 8, 16 | `pose_coverage`, `critical_landmarks`, `insufficient_turns` |
+
+**Every rejection in the entire ladder is downstream of pose tracking
+degrading. Not one came from a capture-quality threshold.**
+
+Confirmed structurally in `quality.py`: `blur_score` and `stability_score`
+append no hard failure. They set `limited_by_capture`, which can only demote to
+`limited`. **The blur and stability checks are incapable of rejecting footage** —
+their combined 15 of 110 weight can move readiness, and that is all.
+
+So the real gate is MediaPipe. The capture-quality checks are an advisory layer
+on top of it, and the ranked failure modes should be read accordingly: what
+admits unusable footage is not a threshold being too loose, it is tracking
+succeeding on footage where the landmarks are not trustworthy. That is a sharper
+target than any of A–E, and it is where L3 (abstention) should aim.
+
+### 9.4 Everything else
+
+- **blur axis now has range**: 54 → 33 → 13 → 4 → 2 → 1. Flips `full`→`limited`
+  at sigma 0.5 and `limited`→`rejected` at sigma 5. Note the calibration: the
+  clean baseline is **54 against a threshold of 50** — four points of headroom —
+  and a barely-visible sigma 0.5 blur drops it to 33. The threshold sits on a
+  cliff for this source.
+- **§8.2 stands.** Shake 0→32 moves `stability_score` 79→74, now measured at the
+  raw 320x568 geometry where 32px is a large relative displacement. Five points
+  for a 4x change in real motion. The `rejected` at amp 32 is `pose_coverage`,
+  not stability.
+- **Claim B still moot.** Tracking dies at k ≤ 0.5 with `rider_not_found`; the
+  0.12 bbox floor is never approached. The three numbers can stay inconsistent
+  without consequence until tracking improves.
+- **Exposure never decides anything either.** At −0.2 the exposure score is
+  still 100 and the clip is rejected for `insufficient_turns` — mild darkening
+  kills tracking before the exposure check notices.
+- **`rider_size` blur column is invalid.** The black pad border is a hard edge
+  that inflates Laplacian variance: `blur_score` reads **100** at k=0.7 against
+  54 for the untouched clip. Fix the axis before reading its blur numbers.
+- **Two MISSes, both the ladder's fault.** `turn_count` at frac 0.2 and 0.35
+  expected `rejected`; 5.4 s of this clip still holds ≥3 turns. Recorded, not
+  re-labelled. Pre-fix, frac 0.2 *did* reject — which shows that rejection was
+  blur-driven and had nothing to do with turn count.
+
+### Claim status after the fixes
+
+| claim | status |
+|---|---|
+| A — turns check is dead weight | confirmed (L0) |
+| B — rider size has three numbers | **moot** — tracking binds far earlier |
+| C — two mechanisms disagree | confirmed, and **narrower than it looks**: neither mechanism rejects on capture quality |
+| D — weights sum to 110 | confirmed |
+| E — blur judged from ~10 frames | **CONFIRMED and exploitable** (9.2) |
+| 8.1 — gate judged its own rescaling | **fixed** |
+| 8.2 — stability blind to shake | confirmed, open |
+| 8.7 — proxy rejects >16:9 portrait | **fixed** |
+| 9.3 — capture checks cannot reject | **new, and the most structural** |

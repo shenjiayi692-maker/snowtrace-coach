@@ -89,7 +89,21 @@ class AnalysisPipeline:
             if selected is None:
                 raise ValueError("The selected rider track is no longer available.")
         turns = detect_turns(selected, first_edge)
-        blur_score, exposure_score = sample_visual_quality(proxy_path)
+        # Sharpness is a property of what the rider filmed, so it is measured on
+        # the source. Measuring it on the proxy scored the pipeline's own
+        # rescaling: on a 568x320 clip the proxy upscale dropped Laplacian
+        # variance from 246.8 to 21.8 -- blur_score 61.7 to 5.4 -- and the gate
+        # then told the rider to avoid digital zoom for a softness the upscale
+        # had introduced. Interpolation invents no detail, so any source below
+        # the proxy bound was permanently capped at `limited`.
+        #
+        # Fall back to the proxy when the source yields nothing: the proxy is
+        # always H.264, while the source may be a codec this OpenCV build cannot
+        # open. Camera stability stays on the proxy deliberately -- it needs the
+        # normalized CFR 30 timebase to compare frames a fixed interval apart.
+        blur_score, exposure_score = sample_visual_quality(metadata.path)
+        if (blur_score, exposure_score) == (0.0, 0.0):
+            blur_score, exposure_score = sample_visual_quality(proxy_path)
         stability_score = estimate_camera_stability(proxy_path)
         quality = build_quality_gate(
             selected,

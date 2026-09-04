@@ -70,8 +70,15 @@ def create_proxy(source: str | Path, destination: str | Path) -> Path:
     source_metadata = probe_video(source_path)
     output = Path(destination).resolve()
     output.parent.mkdir(parents=True, exist_ok=True)
+    # Fit inside the orientation's bound box rather than pinning the short side
+    # to 720. Pinning the short side leaves the long side unconstrained, so any
+    # source more elongated than 16:9 -- 19.5:9 and 20:9 are ordinary phone
+    # aspect ratios -- produced a proxy that _validate_proxy below then rejected,
+    # with an error that never mentioned aspect ratio. Output is identical to the
+    # old expression for every ratio at or inside 16:9.
     filter_graph = (
-        "scale=if(gt(iw\\,ih)\\,-2\\,720):if(gt(iw\\,ih)\\,720\\,-2),"
+        "scale=w=if(gt(iw\\,ih)\\,1280\\,720):h=if(gt(iw\\,ih)\\,720\\,1280)"
+        ":force_original_aspect_ratio=decrease:force_divisible_by=2,"
         "fps=30,setpts=PTS-STARTPTS,setsar=1"
     )
     _run([
