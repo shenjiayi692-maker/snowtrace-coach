@@ -5,18 +5,26 @@ written **without a checkout**: field names were reconstructed from usage and
 five claims were read off the GitHub web view rather than measured.
 
 The source is now available locally at `analysis/src/snowtrace_analysis/`
-(11 modules, 1679 lines). Everything below was verified by reading it. No eval
-code has been executed yet — that remains true.
+(11 modules, 1679 lines) and §1–§4 were verified by reading it.
+
+**Read §8 first.** L0 and L1 have both since run, and L1 produced findings that
+matter more than any of claims A–E: the pipeline degrades the footage it then
+judges (§8.1), and the camera-stability metric barely responds to camera
+movement (§8.2). §1–§4 are kept as the record of what was derived before any
+code ran, not as the current state.
 
 ---
 
-## 0. Environment as of 2026-09-04
+## 0. Environment
+
+Sections dated 2026-09-04 unless noted. Rows marked ✅ were true at the time and
+have since been resolved — kept so the sequence stays legible.
 
 | | state |
 |---|---|
-| git | initialized this session; **nothing committed yet** |
-| `evals/` | **does not exist on disk** — the three files exist only as pasted text |
-| clean clips | 2 (see §5); one is unusable |
+| git | ✅ was uninitialised; repo has full history, work committed through `57beb80` |
+| `evals/` | ✅ was pasted text only; now on disk, L0 + L1 both run |
+| clean clips | 6 known; **1 usable** (`30331562`, trimmed — see §7) |
 | ffmpeg / ffprobe | present (`/opt/homebrew/bin`) |
 | python | `.venv` py3.12 — mediapipe 0.10.35, opencv-python-headless 4.14, numpy 2.5.2 |
 | pose model | `analysis/models/pose_landmarker_lite.task` |
@@ -364,36 +372,179 @@ scales with rung count, not sweep size.
 
 ---
 
+---
+
+## 8. Phase 2 / L1 results (2026-09-04)
+
+Full ladder: 34 rungs on the `30331562` fixture window, `evals/out/l1_ladder.md`.
+33 usable, 1 invalid, 1 miss. Findings ordered by how much damage they do.
+
+### 8.1 create_proxy destroys the blur signal it is then judged on
+
+**This is the finding the suite was built to produce.** Measured directly:
+
+| | Laplacian variance | `blur_score` | verdict |
+|---|---|---|---|
+| source, 568x320 | **246.8** | **61.7** | passes the 50 threshold |
+| after `create_proxy`, 720x1278 | **21.8** | **5.4** | fails catastrophically |
+
+`create_proxy` scales the short side to 720 **unconditionally** — there is no
+guard against upscaling. A 320-wide source is blown up 2.25x, which is pure
+interpolation: it invents no detail and flattens the high-frequency content that
+Laplacian variance measures. 91% of the signal is gone.
+
+The gate then samples blur *from that proxy* and concludes the footage is
+motion-blurred. The rider is told:
+
+> "Use brighter light and avoid digital zoom so the rider stays sharp."
+
+That is advice about their filming, for a defect the pipeline introduced. It is
+failure mode (1) — wrong advice — arriving exactly where §1 of this document
+predicted it would: upstream, in the gate, nowhere near the coaching logic.
+
+Consequences visible across the whole ladder:
+
+- **Every one of the 34 rungs is capped at `limited`**, because
+  `limited_by_capture = blur_score < 50` is true unconditionally on this
+  footage. The gate has one usable verdict here, not three.
+- The blur axis has **6 points of dynamic range** (6 at sigma 0, 0 at sigma 12).
+  A check with no range cannot discriminate, and its 10 weight is a near-constant
+  penalty rather than a measurement.
+
+**Proposed, not applied** (§6 — this suite measures):
+1. Stop upscaling: clamp the proxy scale so it never exceeds the source's short
+   side. This is a one-expression change and it fixes the cause.
+2. Or sample blur from the *source* rather than the proxy, so the measurement
+   is not taken through a transform the pipeline chose.
+3. Either way the 50 threshold needs re-deriving afterwards — every number in
+   this ladder shifts.
+
+### 8.2 estimate_camera_stability is nearly blind to camera shake
+
+Injected sinusoidal shake, verified to actually move pixels:
+
+| amplitude | mean frame-to-frame pixel delta | `stability_score` |
+|---|---|---|
+| 0 | 4.45 | 80.2 |
+| 8 | 7.95 | 79.5 |
+| 32 | **17.63** | **78.6** |
+
+A 4x increase in real inter-frame motion moves the score 1.6 points out of 100.
+The gate's shake axis never flipped a verdict at any amplitude tested.
+
+Likely cause is `np.median(magnitude)` over the Farneback flow field. On a
+low-texture snow scene most pixels carry no trackable gradient, so the median is
+set by the untextured majority no matter what the camera does. A mean, or a high
+percentile, would respond. This is a metric-design question, not a threshold one
+— exactly like claim E, no threshold change closes it.
+
+### 8.3 Claim E is untestable on this footage, and the rung that "passed" is a false pass
+
+`sampling_evasion` at sigma 8 returned `rejected`, matching its expectation. The
+match is meaningless: `blur_score` was 5 against a clean baseline of 6. The
+sharpened frames and the blurred frames are indistinguishable to a metric
+already pinned near zero, so the evasion could not have been detected *or*
+missed. The rejection came from elsewhere in the gate.
+
+The coordinate-system fix (§4.1) is verified working — the sampler read exactly
+the frames the filter sharpened, and no rung was marked INVALID for drift. The
+axis is sound; the footage cannot exercise it. **Claim E stays open**, and
+testing it needs a source at or above 720 on the short side so `blur_score` has
+somewhere to move.
+
+At sigma 16 the rung is INVALID: degradation destroyed rider tracking entirely.
+
+### 8.4 Claim B is moot — the bbox floor never binds
+
+The `rider_size` ladder never reaches the .12 / .35 / 20% disagreement:
+
+| scale | status | note |
+|---|---|---|
+| 1.0 | `limited` | baseline |
+| 0.7 | **`rejected`** | readiness 76, stability 99 — still rejected |
+| ≤ 0.5 | `rejected` | all scores 0: the track is gone entirely |
+
+MediaPipe loses the rider long before `bbox_height` approaches 0.12. Which of
+the three numbers is canonical is therefore a question with no practical
+consequence today — **tracking is the binding constraint, not the threshold.**
+Reconciling the three numbers would change nothing until tracking improves.
+
+**Harness artefact to fix before re-running this axis:** the black pad border
+introduces a hard edge that inflates Laplacian variance — `blur_score` jumps
+from 6 to 45 at k=0.7. The blur column on the rider_size rows is measuring the
+border, not the footage.
+
+### 8.5 The one MISS is a harness error, not a gate defect
+
+`turn_count` at frac 0.35 expected `rejected`, got `limited` at readiness 79.
+Trimming a 27 s clip to 9.45 s still leaves well over 3 turns. The `expect`
+values were written against an assumption of much shorter footage. The real flip
+sits between 5.4 s and 9.45 s. **The ladder was wrong, the gate was right** —
+recorded rather than quietly re-labelled, since a ladder that adjusts its
+expectations to whatever it observes cannot fail.
+
+### 8.6 Exposure acts only through readiness
+
+No hard threshold; it moves the verdict only by dragging the weighted sum under
+55. Confirmed at brightness +0.6 (`exposure` 0, readiness 45, `rejected`) while
+−0.6 (`exposure` 0, readiness 67) stayed `limited`. This independently confirms
+L0's "exposure never flips" from the opposite direction.
+
+### 8.7 create_proxy rejects portrait sources more elongated than 16:9
+
+Found when the ladder crashed, not by looking for it. `create_proxy` scales the
+short side to 720 and never constrains the long side; `_validate_proxy` then
+rejects a portrait proxy taller than 1280. The boundary is exactly 16:9.
+
+Confirmed on a synthetic 1080x2340 clip — 19.5:9, an ordinary phone aspect
+ratio — which raises `VideoError` with a message that never mentions aspect
+ratio. The eval footage is 1:1.775, inside the bound by 0.003, which is why
+nothing had hit this before.
+
+Same root cause as 8.1: the scale expression has no clamp.
+
+### Status of the claims after L1
+
+| claim | before L1 | after L1 |
+|---|---|---|
+| A — turns check is dead weight | confirmed (L0) | unchanged |
+| B — rider size has three numbers | confirmed by reading | **moot in practice** — tracking binds first (8.4) |
+| C — two mechanisms disagree | confirmed (L0) | unchanged |
+| D — weights sum to 110 | confirmed | unchanged |
+| E — blur judged from ~10 frames | confirmed by reading | **untestable on this footage** (8.3) |
+| — | — | **new: 8.1, 8.2, 8.7** |
+
+The three new findings all sit in the same place: the gate measures quality
+through transforms the pipeline itself applies, on metrics whose dynamic range
+nobody checked against real footage. That is a sharper statement of the original
+thesis than any of A–E.
+
+---
+
 ## 进度(最后更新 2026-09-04)
 
 - 已完成:
-  - 通读本地 `analysis/src/snowtrace_analysis/` 全部源码,原 handoff「无 checkout」的前提作废
-  - claim A/B/C/D/E 全部**静态确认**,其中 C 比原文严重(四条绕过 readiness 的降级路径)
-  - 原 handoff §4 推测的字段名核对完毕,查出 3 个会直接抛异常的错(见 §3)
-  - 查出两个 intent 级问题(§4.1 sampling_evasion 构造不出目标反例;§4.2 dead-weight 断言恒失败)
-  - `git init` 完成;`.gitignore` 增加 evals 产物与视频排除
-  - **Phase 0 完成**:`evals/{__init__,fixture,gate_surface,degrade}.py` 已落盘,§3 四个阻塞点全修,运行中又发现三个(见 §7 第 4/5/6 条)
-  - 五个片子全部探过,只有 `372bdb2f…` 能出干净单人 track,已抓成 `evals/fixtures/track_clean.json`(284 KB,69 帧,2 个弯)
-  - **claim C.2 在真实数据上确认**:readiness 最高 94 仍 rejected;归因已修正为 `insufficient_turns`(上游硬失败),不是空指标尾部分支
-  - **Phase 1 完成**:`evals/out/surface.md` 已生成。两次运行都记在 §7 表里 —— `MIN_TURNS=1` 那次确认了 C.1(36.3%),`MIN_TURNS=3` 这次确认了 A 和 C.2
-  - `MIN_TURNS` 已恢复 3,`analysis/tests/` **45/45 全绿**,那个红测试是自己好的,始终没被改过
-  - L0 运行时预算按决定放宽到 90s
-  - 已删:`evals/out/surface.json`(62 MB)、`.eval-work/`(含一份 rider proxy)、`.snowtrace-work/`(matplotlib 缓存)
-  - **拿到可用素材**:`30331562…`(56.34s,超 30s 上限,切 `-ss 28 -t 27` 后可用),track 3 出 **8 个弯 / 347 帧观测 / 无硬失败**
-  - **L0 第一次真正有效**:生产阈值原样、surface 不退化。claim A 确认、C.1 确认(33.8%,最差 readiness 87)
-  - `metric_visibility` 在**两个互不相关的片子**上都恒为 100 —— 之前那句「需要第二个 fixture 才能下结论」的条件已满足
-  - fixture 增加 `provenance` / `track_id` / `observation_count` 三个 meta 字段并打进报告头
-  - 默认 step 由 5 改为 10:真实 fixture 下 step 5 要 6 分 30 秒,step 10 是 57 秒
+  - **Phase 0**:`evals/{__init__,fixture,gate_surface,degrade}.py` 落盘,§3 四个阻塞点全修
+  - **Phase 1 (L0)**:`evals/out/surface.md`。claim A 确认、C.1 确认(33.8%,最差 readiness 87)、D 确认;C.2 在真实数据上确认(readiness 94 仍 rejected)
+  - **Phase 2 (L1)**:`evals/out/l1_ladder.md`,34 个 rung,33 可用 / 1 invalid / 1 MISS
+  - 六个片子全探过,只有 `30331562…` 可用(需切 `-ss 28 -t 27`,track 3);fixture 8 个弯 / 347 帧
+  - `MIN_TURNS` 一度降到 1 又恢复 3,生产行为与开工前等价,`analysis/tests/` **45/45 全绿**
+  - L0 默认 step 由 5 改 10(真实 fixture 下 82s→6分30秒→57s),进 90s 预算
+  - 修好 §4.1 坐标系问题**并让该假设可证伪**:采样位置对不上就标 INVALID,不再当成结论
+  - 修好 shake / rider_size 的几何漂移;单个 rung 崩溃不再毁掉整轮
+- **L1 查出三个新缺陷,都比 claim A–E 更要命**:
+  - **§8.1 `create_proxy` 上采样毁掉它自己要判的 blur 信号** —— 246.8 → 21.8 方差,blur_score 61.7 → 5.4。闸门据此判"运动模糊"并让骑手去改拍摄手法,而问题是 pipeline 自己造的。这是失败模式 (1) 给出错误建议,发生位置正是本文 §1 预测的上游
+  - **§8.2 `estimate_camera_stability` 几乎测不到抖动** —— 逐帧像素位移 4 倍变化,分数只动 1.6 分。中位光流在低纹理雪面上被无纹理区主导
+  - **§8.7 `create_proxy` 拒收比 16:9 更细长的竖屏** —— 1080x2340(19.5:9,普通手机比例)直接 VideoError,报错信息不提宽高比
 - 下一步:
-  - **Phase 2 (L1) 已解除阻塞** —— 素材有了,但 `degrade.py` 仍从未运行过
-  - 跑 L1 前必须先处理 §4.1 的 `sampling_evasion` 坐标系问题,否则那条轴的结果无法解读
-  - `evals/README.md` 尚未落盘(设计文档,原 handoff §2 列为已存在)
-  - exposure 在所有 fixture 上都从未改变过判决(5 权重 + 无硬阈值),值得单独查
+  - 三个新缺陷按 §6 只提议未改动,**等你决定改哪个**。§8.1 的修法是一个表达式(禁止上采样),但改完 blur 阈值 50 要重新标定,整条 L1 全部数字都会变
+  - **claim E 仍未验证** —— 本片 blur 恒在 5 附近,采样绕过测不出来。需要短边 ≥720 的原生素材
+  - `rider_size` 轴的 blur 列是在测黑边不是测画面(pad 边缘抬高 Laplacian 方差),重跑该轴前要修
+  - Phase 3 (L2 不变性) / Phase 4 (L3 弃权) 尚未编写
+  - `evals/README.md` 尚未落盘
 - 残留状态:
-  - `quality.py` 是本次唯一改动的生产文件:字面量 3 换成了具名 `MIN_TURNS = 3` + 注释;行为等价
-  - **fixture 素材是 568x320 横屏**,proxy 会上采样到 ~1278x720;landmark 质量受限于原始 320 行,所有基于它的数字都继承这个上限
-  - C.2 无法从当前 fixture 复现(sweep 里没有 rejected),它的确认停留在 run 2 的记录上
-  - `evals/out/surface.md` 是生成物且被 gitignore,不进基线
-  - `evals/out/surface.json` 有 65 MB(已被 gitignore),不需要可直接删
-  - `.eval-work/` 里有留下的 proxy 文件;`.snowtrace-work/` 是更早的遗留
+  - `quality.py` 是唯一改动过的生产文件,行为等价(字面量 3 → 具名 `MIN_TURNS = 3`)
+  - **所有 L1 数字都继承一个上限**:fixture 源片是 320x568,proxy 上采样到 720x1278。这正是 §8.1 的病灶,也意味着这批数字在换到原生高分素材后必须重测
+  - C.2 无法从当前 fixture 复现(sweep 里无 rejected),确认停留在记录上
+  - `evals/out/` 全是生成物且被 gitignore,不进仓库
   - 无未跑的迁移、无未填的 key、无起着的服务
