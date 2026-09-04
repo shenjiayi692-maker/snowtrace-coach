@@ -526,31 +526,26 @@ thesis than any of A–E.
 ## 进度(最后更新 2026-09-04)
 
 - 已完成:
-  - **Phase 0**:`evals/{__init__,fixture,gate_surface,degrade}.py` 落盘,§3 四个阻塞点全修
-  - **Phase 1 (L0)**:`evals/out/surface.md`。claim A 确认、C.1 确认(33.8%,最差 readiness 87)、D 确认;C.2 在真实数据上确认(readiness 94 仍 rejected)
-  - **Phase 2 (L1)**:`evals/out/l1_ladder.md`,34 个 rung,33 可用 / 1 invalid / 1 MISS
-  - 六个片子全探过,只有 `30331562…` 可用(需切 `-ss 28 -t 27`,track 3);fixture 8 个弯 / 347 帧
-  - `MIN_TURNS` 一度降到 1 又恢复 3,生产行为与开工前等价,`analysis/tests/` **45/45 全绿**
-  - L0 默认 step 由 5 改 10(真实 fixture 下 82s→6分30秒→57s),进 90s 预算
-  - 修好 §4.1 坐标系问题**并让该假设可证伪**:采样位置对不上就标 INVALID,不再当成结论
-  - 修好 shake / rider_size 的几何漂移;单个 rung 崩溃不再毁掉整轮
-  - **§8.1 / §8.7 两个生产缺陷已修**(`pipeline.py` 改测源片、`video.py` 改装盒缩放),`analysis/tests/` 全程 45/45,一个测试都没改
-  - **修完重跑 L1**(§9):同一段素材从 `limited`(80)变成 **`full`(86)**
-  - **claim E 确认且可利用**(§9.2):只留 10/810 帧锐利,blur_score = 53,干净基线 54,均匀模糊是 1
-  - **§9.3 是最结构性的发现**:34 个 rung 里**全部** `rejected` 都来自追踪崩溃,没有一次来自 blur/stability/exposure —— 这两个检查在 `quality.py` 里压根没有硬失败,最多降到 `limited`
-- 下一步:
-  - **§8.2 仍未修**(stability 对抖动近乎失明,抖 4 倍分数动 5 分),这是度量设计问题不是阈值问题
-  - **claim E 的修复没做**:要改采样器(随机化或大幅加密采样),按原 handoff 约定要带 seed 且 eval 里固定;改完 **L1 全部要重跑**
-  - blur 阈值 50 值得重新标定:干净基线 54,只有 4 分余量,而 sigma 0.5 的轻微模糊就掉到 33
-  - `rider_size` 轴的 blur 列无效(黑边 pad 抬高方差,k=0.7 读到 100),重跑该轴前要修 harness
-  - `turn_count` 的 expect 值是错的(两个 MISS 都是梯子的错),需要按实际片长重设
-  - Phase 3 (L2 不变性) / Phase 4 (L3 弃权) 尚未编写。§9.3 指出 L3 该瞄准的地方:真正放行坏素材的不是阈值太松,是追踪在 landmark 不可信时仍然"成功"
-  - `evals/README.md` 尚未落盘
+  - **Phase 0/1/2 完成**:`evals/out/surface.md`(L0,15972 配置,57s)、`evals/out/l1_ladder.md`(L1,36 rung,零 invalid)
+  - **Phase 4 部分完成**:`evals/abstention.py`,3 个测试,0.11 秒,零视频依赖,可直接进 CI
+  - 在 `analysis/` 查出 6 个生产缺陷,**修了 3 个**:§8.1 闸门在自己上采样的副本上判锐度、§8.7 proxy 拒收 >16:9 竖屏、claim E 采样器只读 1.2% 的帧
+  - `analysis/tests/` 全程 45/45,一个测试都没有为迁就改动而修改过
+- **收尾结论:eval 到此为止,不继续建设**。理由见下,这是明确决定不是搁置
+  - 项目 3 周大、零真实用户、`BETA_ACCESS_CODE` 还是注释状态 —— 20 人 beta 一次没跑过
+  - eval 相关代码(1102 行)+ 本文档(789 行)已超过被测的分析服务本体(1781 行)
+  - L1 只有**一个**可用片子,原设计要求"不到十个全跑"。单片"标定曲线"不是曲线
+  - 值回票价的是「对着真实素材跑一遍并质疑数字是否有意义」,不是这套五层架构
+- 下一步(按优先级):
+  - **去跑 beta**。20 个人在眼前用,信息量远超 L2 不变性测试
+  - beta 产出 20+ 真实片子后再回来做标定 —— 那时 L1 才第一次有统计意义,代码已在仓库里
+  - 三个仍然开着的缺陷等产品决定:§8.2(stability 对抖动近乎失明)、§9.3(capture 检查无硬失败、永远拒不掉东西)、§10.2(blur 阈值落在噪声带内)
+  - Phase 3 (L2 不变性) / Phase 5 (CI) **不做**,除非 beta 暴露出相关问题
 - 残留状态:
-  - 改动过的生产文件三个:`quality.py`(具名 `MIN_TURNS = 3`,行为等价)、`pipeline.py`(blur 改测源片)、`video.py`(缩放改装盒)
-  - **L1 数字仍继承素材上限**:源片 320x568,虽然 blur 不再受上采样污染,但 landmark 质量还是受限于 320 行。换原生高分素材后要重测
-  - C.2 无法从当前 fixture 复现(sweep 里无 rejected),确认停留在记录上
-  - `evals/out/` 全是生成物且被 gitignore,不进仓库
+  - 改动过的生产文件三个:`quality.py`(具名 `MIN_TURNS = 3`,行为等价)、`pipeline.py`(blur 改测源片 + `quality_seed`)、`video.py`(装盒缩放 + 新采样器)
+  - **claim E 的残留风险是 seed 保密**:知道 seed 的攻击者仍能几乎完美复现干净分数(§10.1)
+  - fixture 现在带 `--first-edge heelside`。**用默认的 `unknown` 重抓会让弃权测试退回空过** —— 见 `abstention.py` 的对照测试
+  - 所有 L1 数字继承素材上限(源片 320x568),换原生高分素材后要重测
+  - `evals/out/` 全是生成物且被 gitignore
   - 无未跑的迁移、无未填的 key、无起着的服务
 
 ---

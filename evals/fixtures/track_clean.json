@@ -2,15 +2,15 @@
  "schema": 1,
  "meta": {
   "source": "win_28.mp4",
-  "provenance": "source 303315627051b758165eb4f7cfa80c90.mp4 (56.34s, 568x320); window ffmpeg -ss 28 -t 27; rider track_id 3",
+  "provenance": "source 303315627051b758165eb4f7cfa80c90.mp4 (56.34s, 568x320); window ffmpeg -ss 28 -t 27; rider track_id 3; first edge declared heelside",
   "track_id": 3,
   "camera_mode": "fixed",
   "stance": "regular",
   "view_angle": "three-quarter",
   "travel_direction": "left-to-right",
-  "first_edge": "unknown",
+  "first_edge": "heelside",
   "gate_status": "full",
-  "readiness_score": 86,
+  "readiness_score": 85,
   "hard_failures": [],
   "turn_count": 8,
   "observation_count": 347,
@@ -73243,7 +73243,7 @@
  "turns": [
   {
    "index": 0,
-   "edge_type": "unknown",
+   "edge_type": "heelside",
    "start_ms": 6733,
    "apex_ms": 7133,
    "end_ms": 7533,
@@ -73252,7 +73252,7 @@
   },
   {
    "index": 1,
-   "edge_type": "unknown",
+   "edge_type": "toeside",
    "start_ms": 7533,
    "apex_ms": 8000,
    "end_ms": 8500,
@@ -73261,7 +73261,7 @@
   },
   {
    "index": 2,
-   "edge_type": "unknown",
+   "edge_type": "heelside",
    "start_ms": 8500,
    "apex_ms": 9000,
    "end_ms": 10067,
@@ -73270,7 +73270,7 @@
   },
   {
    "index": 3,
-   "edge_type": "unknown",
+   "edge_type": "toeside",
    "start_ms": 10067,
    "apex_ms": 10933,
    "end_ms": 11567,
@@ -73279,7 +73279,7 @@
   },
   {
    "index": 4,
-   "edge_type": "unknown",
+   "edge_type": "heelside",
    "start_ms": 11567,
    "apex_ms": 12233,
    "end_ms": 12700,
@@ -73288,7 +73288,7 @@
   },
   {
    "index": 5,
-   "edge_type": "unknown",
+   "edge_type": "toeside",
    "start_ms": 12700,
    "apex_ms": 13167,
    "end_ms": 14100,
@@ -73297,7 +73297,7 @@
   },
   {
    "index": 6,
-   "edge_type": "unknown",
+   "edge_type": "heelside",
    "start_ms": 14100,
    "apex_ms": 15067,
    "end_ms": 15433,
@@ -73306,7 +73306,7 @@
   },
   {
    "index": 7,
-   "edge_type": "unknown",
+   "edge_type": "toeside",
    "start_ms": 15433,
    "apex_ms": 15833,
    "end_ms": 16200,
