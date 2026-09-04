@@ -160,6 +160,11 @@ def capture(args: argparse.Namespace) -> int:
         result.selected_track,
         result.turns,
         source=Path(args.video).name,
+        # Fixtures increasingly come from a trimmed window of a longer clip,
+        # and a scratch filename tells a stranger nothing. Record how to get
+        # back to the footage, since the footage itself can never be committed.
+        provenance=args.note,
+        track_id=result.selected_track.track_id,
         camera_mode=args.camera_mode,
         stance=args.stance,
         view_angle=args.view_angle,
@@ -169,6 +174,7 @@ def capture(args: argparse.Namespace) -> int:
         readiness_score=result.quality.readiness_score if result.quality else None,
         hard_failures=list(result.quality.hard_failures) if result.quality else [],
         turn_count=len(result.turns),
+        observation_count=len(result.selected_track.observations),
         fps=result.metadata.fps,
         duration_seconds=result.metadata.duration_seconds,
     )
@@ -197,6 +203,9 @@ def main() -> int:
     cap.add_argument("--first-edge", default="unknown",
                      choices=["heelside", "toeside", "unknown"])
     cap.add_argument("--track-id", type=int, default=None)
+    cap.add_argument("--note", default="",
+                     help="how to reproduce this fixture from the original "
+                          "footage, e.g. 'clip abc123.mp4, -ss 28 -t 27'")
     cap.set_defaults(func=capture)
 
     args = ap.parse_args()

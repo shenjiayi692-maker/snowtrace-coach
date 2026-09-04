@@ -74,7 +74,11 @@ class Point:
         return self.scores.get("metric_visibility", 100.0) < 100.0
 
 
-def sweep(track: RiderTrack, turns: list[Turn], step: int = 5) -> list[Point]:
+def sweep(track: RiderTrack, turns: list[Turn], step: int = 10) -> list[Point]:
+    # Cost is O(points x observations): build_quality_gate recomputes
+    # metric_landmark_reliability over the whole track on every call. A 347-frame
+    # fixture at step 5 takes ~6.5 min; step 10 is ~7x cheaper and still lands
+    # exactly on the 50 flip points, which is what the sweep is here to find.
     axis = range(0, 101, step)
     points: list[Point] = []
     combos = itertools.product(axis, axis, axis, CAMERA_MODES, VIEW_ANGLES, STANCES)
@@ -206,10 +210,14 @@ def report(points: list[Point], meta: dict) -> str:
     src = meta.get("source", "unknown")
     lines += [
         f"Fixture: `{src}` -- {meta.get('turn_count', '?')} turns, "
-        f"captured gate status `{meta.get('gate_status')}` "
-        f"(readiness {meta.get('readiness_score')}).",
-        "",
+        f"{meta.get('observation_count', '?')} observations, captured gate status "
+        f"`{meta.get('gate_status')}` (readiness {meta.get('readiness_score')}).",
     ]
+    # The footage can never be committed, so the only way back to it is this
+    # line. A fixture without it is not reproducible by anyone but its author.
+    if meta.get("provenance"):
+        lines.append(f"Provenance: {meta['provenance']}.")
+    lines.append("")
     by_status = {s: sum(1 for p in points if p.status == s)
                  for s in ("full", "limited", "rejected")}
     lines += [f"Swept {total} configurations.", ""]
@@ -337,8 +345,9 @@ def main() -> None:
                     help="clean RiderTrack fixture (JSON)")
     ap.add_argument("--out", type=Path, help="write markdown report here")
     ap.add_argument("--json", type=Path, help="also dump raw sweep points")
-    ap.add_argument("--step", type=int, default=5,
-                    help="grid step for the 0-100 scalar axes (default 5)")
+    ap.add_argument("--step", type=int, default=10,
+                    help="grid step for the 0-100 scalar axes (default 10, "
+                         "which fits the 90s budget; 5 is ~7x slower)")
     args = ap.parse_args()
 
     track, turns, meta = load_track(args.track)

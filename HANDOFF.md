@@ -210,23 +210,50 @@ MediaPipe or ffmpeg.
 
 Three more clips arrived. Corrected picture:
 
-| clip | duration | candidates | verdict |
-|---|---|---|---|
-| `5288e320…` | 2.53 s | — | unusable, under the 3 s pipeline floor |
-| `70e23e90…` | 3.97 s | 2, ambiguous | marginal |
-| `6634c1c3…` | 22.53 s | 4, ambiguous; coverage 0.9–15%, bbox 0.03–0.16 | wide shot, riders too small |
-| `5272aec6…` | 10.10 s | **0** | no track survives the 3-observation filter |
-| `372bdb2f…` | 11.83 s | 1, unambiguous, score 0.54, bbox 0.283 | **the fixture** |
+| clip | duration | candidates | turns | verdict |
+|---|---|---|---|---|
+| `5288e320…` | 2.53 s | — | — | unusable, under the 3 s pipeline floor |
+| `70e23e90…` | 3.97 s | 2, ambiguous | — | marginal |
+| `6634c1c3…` | 22.53 s | 4, ambiguous; coverage 0.9–15%, bbox 0.03–0.16 | — | wide shot, riders too small |
+| `5272aec6…` | 10.10 s | **0** | — | no track survives the 3-observation filter |
+| `372bdb2f…` | 11.83 s | 1, unambiguous, score 0.54, bbox 0.283 | 2 | first fixture; below the turn floor |
+| `30331562…` | **56.34 s** | 4 per window, ambiguous | **8** | **the fixture**, after trimming |
 
-Only one clip of five yields a clean single-rider track. L1 remains blocked on
-footage, not on code.
+`30331562…` is 56 s — over the 30 s pipeline ceiling, so it cannot be analyzed
+whole. Unlike the 2.53 s clip, that is fixable: trimming is legitimate where
+padding is not. Two 27 s windows were tested; the second one carries a track
+with the best coverage seen anywhere in this footage set.
+
+**Current fixture** — `evals/fixtures/track_clean.json`, 1431 KB:
+
+```
+source 303315627051b758165eb4f7cfa80c90.mp4 (56.34s, 568x320)
+window ffmpeg -ss 28 -t 27
+rider  track_id 3
+```
+
+347 observations, 8 turns, coverage 0.43, bbox height 0.178, readiness 80,
+**no hard failures**, gate `limited`. It is the first clip in the set to clear
+`MIN_TURNS`, and the first to produce a non-degenerate decision surface with
+production thresholds intact.
+
+Caveat worth carrying: the source is 568x320 landscape, which `create_proxy`
+**upscales** to ~1278x720. Landmark quality is bounded by the original 320-line
+source, not by the proxy's dimensions. Every number measured off this fixture
+inherits that.
+
+`fixture.py` now records `provenance` and `track_id` in the fixture meta, and
+`gate_surface` prints it in the report header. Footage can never be committed,
+so that line is the only route back to it; a fixture without one is
+reproducible by its author and nobody else.
 
 ### Claim C.2 confirmed on real data
 
 The first capture of `372bdb2f` returned **`readiness_score: 91` with status
-`rejected`** (`hard_failures: ["insufficient_turns"]`). The tail-branch
-disagreement predicted in §1 from source reading is real, not theoretical: the
-rider is shown a 91 next to a rejection.
+`rejected`** (`hard_failures: ["insufficient_turns"]`). The disagreement
+predicted in §1 from source reading is real, not theoretical: the rider is shown
+a 91 next to a rejection. See defect 6 below — the *cause* was initially
+reported wrong even though the claim held.
 
 ### `MIN_TURNS`: lowered to 1, then restored to 3
 
@@ -257,25 +284,40 @@ the constant records it:
 
 ### L0 output
 
-`evals/out/surface.md`, 111,132 configurations, 82 s, exit 0.
+`evals/out/surface.md`. Four runs were made; the fourth is the one that counts.
+Recording all of them, because the contrast is itself the finding:
 
-Two runs were made. Recording both, because the contrast is the finding:
+| run | fixture | `MIN_TURNS` | full/limited/rejected | claim A | claim C.1 | claim C.2 |
+|---|---|---|---|---|---|---|
+| 1 | `372bdb2f`, 2 turns | 1 | 14/86/0 | refuted (window `{1,2}`) | **confirmed** 36.3%, worst 91 | not exercised |
+| 2 | `372bdb2f`, 2 turns | 3 | 0/0/**100** | **confirmed** | not exercised | **confirmed**, worst **94** |
+| 3 | `30331562`, 8 turns | 3 | 14/86/0 | **confirmed** | **confirmed** 35.2%, worst 87 | not exercised |
+| 4 | `30331562`, 8 turns | 3, step 10 | 15/85/0 | **confirmed** | **confirmed** 33.8%, worst 87 | not exercised |
 
-| | `MIN_TURNS = 1` | `MIN_TURNS = 3` (current) |
-|---|---|---|
-| full / limited / rejected | 14% / 86% / 0% | 0% / 0% / **100%** |
-| claim A | refuted (window `{1,2}`) | **confirmed** (window empty) |
-| claim C.1 | **confirmed**, 40,320 pts (36.3%), worst readiness 91 → `limited` | not exercised — nothing survives to be demoted |
-| claim C.2 | not exercised | **confirmed**, 111,132 pts, worst readiness **94** → `rejected` |
-| flip points | blur 50, stability 50, exposure never | none — the surface is flat |
+Runs 1 and 2 are historical: run 1 required loosening a production threshold,
+run 2 produced a flat surface. **Run 4 is the current committed state** — real
+footage, production thresholds untouched, non-degenerate surface, inside the
+runtime budget.
 
-**The current surface is degenerate**: the fixture's 2 turns hard-reject every
-configuration, so blur/stability/exposure never move the verdict. C.1's
-measurement survives only as the recorded run above; it cannot be reproduced
-from the committed fixture until a clip with ≥3 detected turns exists.
+Findings that survive every run:
 
-Constant across both runs: `metric_visibility` pinned at 100 over all 12
-mode/view/stance combinations. Fixture-scoped, not a proven defect.
+- **Claim A confirmed.** With `MIN_TURNS = 3` the discriminating window
+  `[3, 3)` is empty; `turn_score` is a constant 10-point offset on readiness.
+- **Claim C.1 confirmed.** A third of the surface (33.8% at step 10, 35.2% at
+  step 5 — the estimate is stable under grid resolution) scores readiness ≥ 75
+  and is demoted to `limited` by blur or stability alone. Worst case readiness
+  87. The number shown to the rider does not explain the verdict.
+- **Flip points: blur 50, stability 50, exposure never.** Exposure carries a 5
+  weight and no hard threshold, and on every fixture tried it has never moved a
+  verdict.
+- **`metric_visibility` pinned at 100** across all 12 mode/view/stance
+  combinations — now on **two unrelated clips**, which is what the earlier note
+  asked for before drawing a conclusion. Not yet proof the weight is dead, but
+  it is no longer a single-fixture coincidence. Worth an L1 axis that actually
+  attacks landmark visibility.
+
+C.2 is not reachable from the committed fixture: nothing in the sweep rejects.
+Its confirmation stands on run 2, which is recorded rather than reproducible.
 
 ### Three further defects found while running
 
@@ -302,10 +344,23 @@ mode/view/stance combinations. Fixture-scoped, not a proven defect.
 
 ### Constraint pressure
 
-§7's original "a stranger runs L0 in under a minute" is **superseded: the
-budget is now 90 s**, owner decision. The default step-5 grid measures 82 s,
-which fits. `--step 10` remains available at ~12 s and still lands exactly on
-the 50 flip points, if the budget ever tightens again.
+The original "a stranger runs L0 in under a minute" is **superseded: the budget
+is 90 s**, owner decision.
+
+That budget was set against a 69-observation fixture where step 5 measured
+82 s. The real fixture has **347 observations, and step 5 took 6 min 30 s** —
+`build_quality_gate` recomputes `metric_landmark_reliability` over the entire
+track on every one of the 111,132 calls, so cost is O(points × observations)
+and the budget broke the moment the footage got good.
+
+**The default step is therefore now 10** (15,972 points, 57 s, inside budget).
+The coarser grid costs nothing that matters: it still lands exactly on the 50
+flip points, and C.1 moves only from 35.2% to 33.8%. `--step 5` remains
+available when a finer surface is worth 6.5 minutes.
+
+Worth knowing before L1: the same O(points × observations) cost is why L0 is
+sensitive to fixture length at all. L1 pays it once per rung instead, so it
+scales with rung count, not sweep size.
 
 ---
 
@@ -322,16 +377,22 @@ the 50 flip points, if the budget ever tightens again.
   - **claim C.2 在真实数据上确认**:readiness 最高 94 仍 rejected;归因已修正为 `insufficient_turns`(上游硬失败),不是空指标尾部分支
   - **Phase 1 完成**:`evals/out/surface.md` 已生成。两次运行都记在 §7 表里 —— `MIN_TURNS=1` 那次确认了 C.1(36.3%),`MIN_TURNS=3` 这次确认了 A 和 C.2
   - `MIN_TURNS` 已恢复 3,`analysis/tests/` **45/45 全绿**,那个红测试是自己好的,始终没被改过
-  - L0 运行时预算按决定放宽到 90s,默认 step 保持 5(实测 82s)
+  - L0 运行时预算按决定放宽到 90s
   - 已删:`evals/out/surface.json`(62 MB)、`.eval-work/`(含一份 rider proxy)、`.snowtrace-work/`(matplotlib 缓存)
+  - **拿到可用素材**:`30331562…`(56.34s,超 30s 上限,切 `-ss 28 -t 27` 后可用),track 3 出 **8 个弯 / 347 帧观测 / 无硬失败**
+  - **L0 第一次真正有效**:生产阈值原样、surface 不退化。claim A 确认、C.1 确认(33.8%,最差 readiness 87)
+  - `metric_visibility` 在**两个互不相关的片子**上都恒为 100 —— 之前那句「需要第二个 fixture 才能下结论」的条件已满足
+  - fixture 增加 `provenance` / `track_id` / `observation_count` 三个 meta 字段并打进报告头
+  - 默认 step 由 5 改为 10:真实 fixture 下 step 5 要 6 分 30 秒,step 10 是 57 秒
 - 下一步:
-  - Phase 2 (L1) 阻塞在素材:需要能测出 ≥3 个弯的近景单人片子。现有五个都不行
-  - 拿到这种片子后,当前 fixture 应当替换 —— 它的 surface 是退化的(100% rejected),C.1 无法从提交的 fixture 复现
+  - **Phase 2 (L1) 已解除阻塞** —— 素材有了,但 `degrade.py` 仍从未运行过
+  - 跑 L1 前必须先处理 §4.1 的 `sampling_evasion` 坐标系问题,否则那条轴的结果无法解读
   - `evals/README.md` 尚未落盘(设计文档,原 handoff §2 列为已存在)
-  - §4.1 的 `sampling_evasion` 坐标系问题仍未修,`degrade.py` **从未运行过**
+  - exposure 在所有 fixture 上都从未改变过判决(5 权重 + 无硬阈值),值得单独查
 - 残留状态:
   - `quality.py` 是本次唯一改动的生产文件:字面量 3 换成了具名 `MIN_TURNS = 3` + 注释;行为等价
-  - 当前 L0 surface 退化(100% rejected),这是素材问题不是代码问题
+  - **fixture 素材是 568x320 横屏**,proxy 会上采样到 ~1278x720;landmark 质量受限于原始 320 行,所有基于它的数字都继承这个上限
+  - C.2 无法从当前 fixture 复现(sweep 里没有 rejected),它的确认停留在 run 2 的记录上
   - `evals/out/surface.md` 是生成物且被 gitignore,不进基线
   - `evals/out/surface.json` 有 65 MB(已被 gitignore),不需要可直接删
   - `.eval-work/` 里有留下的 proxy 文件;`.snowtrace-work/` 是更早的遗留
