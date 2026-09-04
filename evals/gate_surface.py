@@ -65,6 +65,7 @@ class Point:
     readiness: float
     allowed: tuple[str, ...]
     scores: dict[str, float]
+    failures: tuple[str, ...]
 
     @property
     def visibility_limited(self) -> bool:
@@ -94,6 +95,7 @@ def sweep(track: RiderTrack, turns: list[Turn], step: int = 5) -> list[Point]:
             readiness=result.readiness_score,
             allowed=tuple(result.allowed_metrics),
             scores={c.id: c.score for c in result.checks},
+            failures=tuple(result.hard_failures),
         ))
     return points
 
@@ -154,15 +156,29 @@ def find_mechanism_conflicts(points: list[Point]) -> list[Point]:
     ]
 
 
-def find_high_readiness_rejections(points: list[Point]) -> list[Point]:
-    """readiness in the passing range, verdict `rejected`.
+TAIL_BRANCH_FAILURE = "no_visible_metrics"
 
-    The gate's tail branch rejects when the allowlist intersection comes out
-    empty, after readiness has already been computed and reported. This is the
-    sharpest disagreement between the two mechanisms: the number shown to the
-    rider can sit in the 90s on a clip that was thrown out.
+
+def find_high_readiness_rejections(points: list[Point]) -> tuple[list[Point], list[Point]]:
+    """readiness in the passing range, verdict `rejected` -- split by cause.
+
+    This is the sharpest disagreement between the gate's two mechanisms: the
+    number shown to the rider can sit in the 90s on a clip that was thrown out.
+    But there are two distinct routes to it, and lumping them together is the
+    same over-counting mistake find_mechanism_conflicts exists to avoid:
+
+      * an upstream hard failure (too few turns, rider too small, thin
+        coverage) -- readiness was computed from checks that were mostly fine
+        and the failure list vetoed it afterwards;
+      * the tail branch, which rejects when the allowed-metric intersection
+        comes out empty *after* readiness has been computed and surfaced.
+
+    Returns (upstream, tail_branch).
     """
-    return [p for p in points if p.status == "rejected" and p.readiness >= 75]
+    high = [p for p in points if p.status == "rejected" and p.readiness >= 75]
+    tail = [p for p in high if TAIL_BRANCH_FAILURE in p.failures]
+    upstream = [p for p in high if TAIL_BRANCH_FAILURE not in p.failures]
+    return upstream, tail
 
 
 def find_boundaries(points: list[Point], axis: str) -> dict[tuple, list[tuple[float, str, str]]]:
@@ -266,25 +282,33 @@ def report(points: list[Point], meta: dict) -> str:
         lines.append("- none")
     lines.append("")
 
-    rejected_high = find_high_readiness_rejections(points)
+    upstream_high, tail_high = find_high_readiness_rejections(points)
     lines += ["## Claim C.2 -- high readiness, rejected anyway", ""]
-    if rejected_high:
-        worst = max(rejected_high, key=lambda p: p.readiness)
-        lines += [
-            f"- {len(rejected_high)} configurations were `rejected` while carrying "
-            f"readiness >= 75; the highest was {worst.readiness:.0f} "
-            f"(blur {worst.blur}, stability {worst.stability}, "
-            f"view {worst.view_angle}, stance {worst.stance}).",
-            "- These come from the gate's tail branch, which rejects when the "
-            "allowed-metric intersection is empty -- after readiness has already "
-            "been computed and surfaced.",
-        ]
+    if upstream_high or tail_high:
+        def _line(group: list[Point], cause: str) -> str:
+            worst = max(group, key=lambda p: p.readiness)
+            causes = sorted({f for p in group for f in p.failures})
+            return (
+                f"- **{cause}:** {len(group)} of {total} configurations "
+                f"({len(group) / total:.1%}) were `rejected` while carrying "
+                f"readiness >= 75. Highest: {worst.readiness:.0f} "
+                f"(blur {worst.blur}, stability {worst.stability}, "
+                f"view {worst.view_angle}, stance {worst.stance}). "
+                f"Hard failures seen: {causes}."
+            )
+        if upstream_high:
+            lines.append(_line(upstream_high, "upstream hard failure"))
+        if tail_high:
+            lines.append(_line(tail_high, "empty-allowlist tail branch"))
+        lines.append(
+            "- Either route surfaces a passing-looking readiness next to a "
+            "rejection. The rider is shown a number that did not decide their "
+            "verdict and does not explain it."
+        )
     elif by_status["rejected"] == 0:
         lines.append(
-            "- Not reachable on this fixture: the sweep produced no `rejected` "
-            "configurations at all, so the tail branch was never exercised. This "
-            "is not evidence that the branch is sound -- capturing this same clip "
-            "under `MIN_TURNS = 3` produced readiness 91 with status `rejected`."
+            "- Not exercised on this fixture: the sweep produced no `rejected` "
+            "configurations at all. That is not evidence the branch is sound."
         )
     else:
         lines.append("- none")

@@ -228,46 +228,56 @@ The first capture of `372bdb2f` returned **`readiness_score: 91` with status
 disagreement predicted in §1 from source reading is real, not theoretical: the
 rider is shown a 91 next to a rejection.
 
-### `MIN_TURNS` lowered 3 → 1
+### `MIN_TURNS`: lowered to 1, then restored to 3
 
-`quality.py` now has a named `MIN_TURNS = 1` constant. Done at the owner's
-explicit instruction so the single usable fixture (2 detected turns) yields a
-non-degenerate decision surface; with the floor at 3 every sweep point was
-`rejected`.
+`quality.py` now carries a named `MIN_TURNS = 3` constant where a bare literal
+used to be. It was briefly set to 1 to get a non-degenerate L0 surface out of
+the only usable clip (2 detected turns), then restored the same day by owner
+decision. **Current production behaviour is unchanged from before this work.**
 
-This contradicts §6's "do not loosen a threshold" and it is a deliberate,
-owner-made exception, recorded here so it is not mistaken for drift.
-Consequences:
+The round trip is worth keeping because of what it exposed, and the comment on
+the constant records it:
 
-- **`analysis/tests/test_quality.py::test_two_turns_are_not_enough_for_same_edge_pairing`
-  now fails** (`'full' != 'rejected'`). 44 of 45 tests pass. The test has
-  **not** been edited — changing it to match a loosened threshold is the exact
-  anti-pattern this suite exists to catch. Deciding its fate is a product call.
-- The score reference stayed at 3.0 deliberately: the reject floor and the
-  normalization reference are separate concepts, and coupling them would be a
-  product decision. The side effect is a **new instance of the claim-B defect
-  shape** — floor 1, score reference 3 — now flagged in `surface.md`.
-- **Claim A is refuted while the floor is 1.** `turn_score` discriminates in
-  the window `[MIN_TURNS, 3)`, which is now `{1, 2}` rather than empty. Raising
-  the floor back to 3 restores the claim. `gate_surface` computes this from
-  `quality.MIN_TURNS` rather than a literal, so the claim cannot silently go
-  stale again.
+- At `MIN_TURNS = 1`, the reject floor and `turn_score`'s 3.0 normalization
+  reference become two different numbers for one concept — structurally the
+  same defect as `rider_size` (.12 floor / .35 score reference / 20% message).
+  Holding both at 3 keeps them aligned. **Move one and you must decide about
+  the other.**
+- **Claim A is a function of that gap, not a fixed truth.** `turn_score`
+  discriminates only inside the window `[MIN_TURNS, 3)`. At 3 the window is
+  empty and the check is dead weight (claim A confirmed); at 1 the window is
+  `{1, 2}` and the check carries real information (claim A refuted).
+  `gate_surface` computes this from `quality.MIN_TURNS` rather than a literal,
+  so the claim re-evaluates itself instead of going stale.
+- `analysis/tests/` is **45/45 green** at `MIN_TURNS = 3`. While it was 1,
+  `test_two_turns_are_not_enough_for_same_edge_pairing` failed
+  (`'full' != 'rejected'`); that test was never edited, and restoring the
+  floor turned it green on its own — which is the correct way for it to
+  recover.
 
 ### L0 output
 
 `evals/out/surface.md`, 111,132 configurations, 82 s, exit 0.
 
-- `full` 14% / `limited` 86% / `rejected` 0%
-- **Claim C.1 confirmed at scale:** 40,320 configurations (36.3%) scored
-  readiness ≥ 75 and were demoted to `limited` by blur or stability alone —
-  follow-camera and metric-visibility demotions excluded so the cause is
-  unambiguous. Worst case: readiness 91, blur 95, stability 40 → `limited`.
-- Flip points: blur at 50, stability at 50, exposure **never** — exposure has
-  no hard threshold and its 5 weight never moves a verdict on this fixture.
-- `metric_visibility` constant at 100 across all 12 mode/view/stance
-  combinations. Fixture-scoped, not a proven defect.
+Two runs were made. Recording both, because the contrast is the finding:
 
-### Two further defects found while running
+| | `MIN_TURNS = 1` | `MIN_TURNS = 3` (current) |
+|---|---|---|
+| full / limited / rejected | 14% / 86% / 0% | 0% / 0% / **100%** |
+| claim A | refuted (window `{1,2}`) | **confirmed** (window empty) |
+| claim C.1 | **confirmed**, 40,320 pts (36.3%), worst readiness 91 → `limited` | not exercised — nothing survives to be demoted |
+| claim C.2 | not exercised | **confirmed**, 111,132 pts, worst readiness **94** → `rejected` |
+| flip points | blur 50, stability 50, exposure never | none — the surface is flat |
+
+**The current surface is degenerate**: the fixture's 2 turns hard-reject every
+configuration, so blur/stability/exposure never move the verdict. C.1's
+measurement survives only as the recorded run above; it cannot be reproduced
+from the committed fixture until a clip with ≥3 detected turns exists.
+
+Constant across both runs: `metric_visibility` pinned at 100 over all 12
+mode/view/stance combinations. Fixture-scoped, not a proven defect.
+
+### Three further defects found while running
 
 4. `gate_surface.py --json` crashed: `Point` is `slots=True` and has no
    `__dict__`. Fixed with `dataclasses.asdict`. Only reachable via `--json`,
@@ -280,12 +290,22 @@ Consequences:
    assertion on claim A's window against `quality.MIN_TURNS`; it is left out
    until a second fixture exists to confirm it is not encoding this clip's
    quirks.
+6. **C.2 was being reported with the wrong cause.** The first version asserted
+   the high-readiness rejections came from the empty-allowlist tail branch.
+   They did not — all 111,132 came from `insufficient_turns`, an upstream hard
+   failure. This is exactly the over-counting that `find_mechanism_conflicts`
+   was written to avoid, repeated one section further down. `Point` now carries
+   `hard_failures` and C.2 is split by route. **The claim survives either way**
+   (the rider still sees 94 next to a rejection) but the mechanism named was
+   wrong, and a report that misnames a mechanism sends the fix to the wrong
+   place.
 
 ### Constraint pressure
 
-§7's "a stranger runs L0 in under a minute" — the default step-5 grid takes
-**82 s**. `--step 10` brings it to ~12 s and still lands on the 50 flip points.
-Whether to move the default is a call not yet made.
+§7's original "a stranger runs L0 in under a minute" is **superseded: the
+budget is now 90 s**, owner decision. The default step-5 grid measures 82 s,
+which fits. `--step 10` remains available at ~12 s and still lands exactly on
+the 50 flip points, if the budget ever tightens again.
 
 ---
 
@@ -297,19 +317,22 @@ Whether to move the default is a call not yet made.
   - 原 handoff §4 推测的字段名核对完毕,查出 3 个会直接抛异常的错(见 §3)
   - 查出两个 intent 级问题(§4.1 sampling_evasion 构造不出目标反例;§4.2 dead-weight 断言恒失败)
   - `git init` 完成;`.gitignore` 增加 evals 产物与视频排除
-  - **Phase 0 完成**:`evals/{__init__,fixture,gate_surface,degrade}.py` 已落盘,§3 四个阻塞点全修,运行中又发现两个(见 §7)
+  - **Phase 0 完成**:`evals/{__init__,fixture,gate_surface,degrade}.py` 已落盘,§3 四个阻塞点全修,运行中又发现三个(见 §7 第 4/5/6 条)
   - 五个片子全部探过,只有 `372bdb2f…` 能出干净单人 track,已抓成 `evals/fixtures/track_clean.json`(284 KB,69 帧,2 个弯)
-  - **claim C.2 在真实数据上确认**:readiness 91 + rejected
-  - **Phase 1 完成**:`evals/out/surface.md` 已生成,claim A 判为「当前配置下证伪」、C.1 确认(36.3%)、D 早已确认
+  - **claim C.2 在真实数据上确认**:readiness 最高 94 仍 rejected;归因已修正为 `insufficient_turns`(上游硬失败),不是空指标尾部分支
+  - **Phase 1 完成**:`evals/out/surface.md` 已生成。两次运行都记在 §7 表里 —— `MIN_TURNS=1` 那次确认了 C.1(36.3%),`MIN_TURNS=3` 这次确认了 A 和 C.2
+  - `MIN_TURNS` 已恢复 3,`analysis/tests/` **45/45 全绿**,那个红测试是自己好的,始终没被改过
+  - L0 运行时预算按决定放宽到 90s,默认 step 保持 5(实测 82s)
+  - 已删:`evals/out/surface.json`(62 MB)、`.eval-work/`(含一份 rider proxy)、`.snowtrace-work/`(matplotlib 缓存)
 - 下一步:
-  - 决定 `test_two_turns_are_not_enough_for_same_edge_pairing` 怎么办(现在是红的,我没动它)
-  - 决定 `MIN_TURNS` 是留 1 还是恢复 3;若恢复,claim A 自动重新成立,且需要重跑 L0
-  - Phase 2 (L1) 阻塞在素材:需要能测出 ≥3 个弯的近景单人片子
+  - Phase 2 (L1) 阻塞在素材:需要能测出 ≥3 个弯的近景单人片子。现有五个都不行
+  - 拿到这种片子后,当前 fixture 应当替换 —— 它的 surface 是退化的(100% rejected),C.1 无法从提交的 fixture 复现
   - `evals/README.md` 尚未落盘(设计文档,原 handoff §2 列为已存在)
+  - §4.1 的 `sampling_evasion` 坐标系问题仍未修,`degrade.py` **从未运行过**
 - 残留状态:
-  - **git 仓库已建但一次提交都没有** —— 全部文件 untracked,包括这次所有产出
-  - `analysis/tests/` 1 红 44 绿,红的那个是 `MIN_TURNS` 改动的直接后果,是预期的、未处理的
-  - `quality.py` 已被修改(生产代码),这是本次唯一改动的非 eval 文件
+  - `quality.py` 是本次唯一改动的生产文件:字面量 3 换成了具名 `MIN_TURNS = 3` + 注释;行为等价
+  - 当前 L0 surface 退化(100% rejected),这是素材问题不是代码问题
+  - `evals/out/surface.md` 是生成物且被 gitignore,不进基线
   - `evals/out/surface.json` 有 65 MB(已被 gitignore),不需要可直接删
   - `.eval-work/` 里有留下的 proxy 文件;`.snowtrace-work/` 是更早的遗留
   - 无未跑的迁移、无未填的 key、无起着的服务

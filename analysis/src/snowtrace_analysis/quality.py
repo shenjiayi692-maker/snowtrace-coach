@@ -5,13 +5,17 @@ import numpy as np
 from .contracts import QualityCheck, QualityGateResult, RiderTrack, Stance, Turn, ViewAngle
 from .metrics import MIN_METRIC_FRAME_COVERAGE, MIN_METRIC_RELIABILITY, metric_landmark_reliability
 
-# Minimum detected turns before the gate hard-rejects. Lowered from 3 to 1 on
-# 2026-09-04 at the owner's explicit instruction, so that the only usable eval
-# footage (max 2 detected turns) produces a non-degenerate decision surface.
-# NOTE: turn_score below still normalizes against 3.0, so the reject floor and
-# the score reference are now two different numbers -- structurally the same
-# defect as rider_size (.12 floor / .35 score reference / 20% rider message).
-MIN_TURNS = 1
+# Minimum detected turns before the gate hard-rejects.
+#
+# Briefly lowered to 1 on 2026-09-04 to get a non-degenerate L0 surface out of
+# the only usable eval clip (2 detected turns), then restored the same day. The
+# episode is worth keeping as a comment because of what it exposed: at 1, the
+# reject floor and turn_score's 3.0 normalization reference become two different
+# numbers for one concept -- the same defect shape as rider_size (.12 floor /
+# .35 score reference / 20% rider-facing message). Holding both at 3 keeps them
+# aligned, and keeps the turns check a constant 10-point offset on readiness
+# (see HANDOFF.md claim A). Change one, and you have to decide about the other.
+MIN_TURNS = 3
 
 FULL_METRICS = [
     "knee_flexion_lead",

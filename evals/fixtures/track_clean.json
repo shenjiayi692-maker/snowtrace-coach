@@ -7,9 +7,11 @@
   "view_angle": "three-quarter",
   "travel_direction": "left-to-right",
   "first_edge": "unknown",
-  "gate_status": "full",
+  "gate_status": "rejected",
   "readiness_score": 91,
-  "hard_failures": [],
+  "hard_failures": [
+   "insufficient_turns"
+  ],
   "turn_count": 2,
   "fps": 30.0,
   "duration_seconds": 11.833333
