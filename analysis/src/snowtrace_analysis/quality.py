@@ -5,6 +5,14 @@ import numpy as np
 from .contracts import QualityCheck, QualityGateResult, RiderTrack, Stance, Turn, ViewAngle
 from .metrics import MIN_METRIC_FRAME_COVERAGE, MIN_METRIC_RELIABILITY, metric_landmark_reliability
 
+# Minimum detected turns before the gate hard-rejects. Lowered from 3 to 1 on
+# 2026-09-04 at the owner's explicit instruction, so that the only usable eval
+# footage (max 2 detected turns) produces a non-degenerate decision surface.
+# NOTE: turn_score below still normalizes against 3.0, so the reject floor and
+# the score reference are now two different numbers -- structurally the same
+# defect as rider_size (.12 floor / .35 score reference / 20% rider message).
+MIN_TURNS = 1
+
 FULL_METRICS = [
     "knee_flexion_lead",
     "knee_flexion_trail",
@@ -97,9 +105,12 @@ def build_quality_gate(
     if bbox_height < 0.12:
         failures.append("rider_too_small")
         instructions.append("Move the camera closer so the rider occupies at least 20% of frame height.")
-    if len(turns) < 3:
+    if len(turns) < MIN_TURNS:
         failures.append("insufficient_turns")
-        instructions.append("Record at least three connected S-turns.")
+        instructions.append(
+            f"Record at least {MIN_TURNS} connected S-turn"
+            f"{'s' if MIN_TURNS != 1 else ''}."
+        )
     if blur_score < 50:
         instructions.append("Use brighter light and avoid digital zoom so the rider stays sharp.")
     if stability_score < 50:

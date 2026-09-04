@@ -46,3 +46,18 @@ next-env.d.ts
 /analysis/src/*.egg-info/
 /outputs/
 /work/
+
+# eval suite: never commit rider footage or generated reports
+/evals/out/
+/evals/clips/
+/.eval-work/
+*.mp4
+*.mov
+*.MOV
+
+# python bytecode
+__pycache__/
+*.py[cod]
+
+# local agent settings
+/.claude/settings.local.json
