@@ -1,3 +1,13 @@
+<p align="center">
+  <img src="./public/og.png" width="100%" alt="Snowtrace — see the gap, ride the fix">
+</p>
+
+<p align="center">
+  <a href="https://snowtrace-coach.sjysjy.chatgpt.site"><strong>Open Snowtrace</strong></a>
+  · <a href="./docs/BETA_RUNBOOK.md">Beta runbook</a>
+  · <a href="./docs/ANALYSIS_DEPLOYMENT.md">Deploy the analyzer</a>
+</p>
+
 # Snowtrace
 
 Snowtrace is a confidence-first snowboard carving coach. A rider uploads one
