@@ -20,78 +20,88 @@ product. The web experience does not expose sample coaching: it checks worker
 availability before upload and only shows evidence returned by the quality-gated
 analysis service.
 
-## Current scope
+## What the system refuses to compare
 
-- Mobile-first web flow for goal, reference clip, rider clip, filming context,
-  preliminary quality checks, processing, one-gap report, and Show Me evidence
-- Browser-side inspection of duration, resolution, orientation, exposure, and
-  image clarity before upload
-- Worker-side media normalization that honors phone display rotation, converts
-  fixed or variable frame rate clips to zero-based CFR 30 fps, bounds upright
-  analysis proxies to 1280×720 or 720×1280, and keeps original source metadata
-  for quality context; runtime checks reject duration or timebase drift beyond
-  one frame
-- Real session creation, D1 persistence, streaming R2 uploads, upload-integrity
-  checks, idempotent analysis queueing, automatic status refresh, device-local
-  session recovery, ranged source playback, explicit beta consent, and source
-  deletion
-- Replaceable Python video-intelligence service using FFmpeg, OpenCV, and the
-  official MediaPipe Pose Landmarker task model
-- Multi-person pose tracking with an explicit rider-selection state when the
-  main subject is ambiguous, including representative-frame boxes and a
-  selected-track re-run
-- Auto Trim quality scoring over the selected rider segment rather than clip
-  setup time, while blur, camera stability, rider size, and usable turns remain
-  independent gates; blocked blur or stability limits metric availability
-- Per-metric landmark visibility and coverage gates: an occluded knee disables
-  only measurements that require that knee, while long missing spans are never
-  silently bridged by interpolation into coaching evidence
-- Separate reference/rider camera modes plus an explicit same-view compatibility
-  gate; side and front/rear footage receive different metric allowlists rather
-  than pretending all 2D measurements survive every perspective
-- Explicit first-turn edge labels, alternating turn segmentation, same-edge
-  phase normalization anchored to each detected apex, confidence-aware metric
-  comparison, and strict evidence thresholds; opposite edges are never ranked
-  as a coaching difference
-- Separate rider and reference stance snapshots so lead/trail knee labels and
-  the normalized fore/aft axis remain anatomical for both regular and goofy
-  riders instead of silently treating left as lead
-- Explicit per-clip screen travel direction with landmark-only horizontal
-  canonicalization, so a left-to-right rider can be compared with a
-  right-to-left reference without flipping signed 2D movement metrics or
-  altering the source video and Show Me overlay
-- Evidence-frame pose snapshots rendered as synchronized skeleton overlays in
-  the Show Me comparison; the displayed turn pair is the one closest to the
-  median accepted gap, and whole-video landmark streams are not sent to the web
-- Versioned `coach-report-v1` payloads built and persisted server-side from the
-  accepted rank-one evidence; terminal callbacks are idempotent, and restored
-  sessions render the stored metric/edge/phase/drill identity rather than
-  silently changing copy with a newer browser bundle
-- D1 schema for sessions, videos, tracks, turns, metrics, evidence, reports,
-  drills, progression, and feedback; R2 binding reserved for source/proxy video
-- Authenticated, idempotent retention cleanup for expired source and proxy
-  objects, with an opportunistic bounded pass during session creation
-- Token-protected synchronous and asynchronous worker entry points, exact-host
-  source/proxy allowlists, no cross-host redirect following, and a 12-minute
-  lost-callback watchdog that safely redispatches the same analysis ID
-- Reproducible worker dependency pins with a single OpenCV distribution, plus
-  restricted analysis IDs that cannot become temporary-path fragments
-- Durable upload timestamps and idempotent evidence-view events so beta funnel
-  metrics remain correct after video expiry and do not count no-evidence runs
-  as completed reports
-- Bearer-protected instructor review queue with 30-minute signed source links,
-  one idempotent review per evidence-backed run, and KPI output for plausibility,
-  misleading-claim severity, latency, technical failures, and recapture coverage
-- Human-entered shared beta access code that keeps a public landing page from
-  accepting non-cohort uploads, plus unique-rider KPI counts and a deliberately
-  delayed go/iterate/stop decision after the full seven-day observation window
-- Anonymous, D1-backed visible-gap history that compares sessions only when the
-  reference fingerprint, goal, both camera contexts, both stances, both
-  screen travel directions, first-turn labels, metric, edge, phase, and unit match;
-  it is explicitly not presented as a riding score
+<p align="center">
+  <img src="./assets/readme/gates.svg" width="100%" alt="Two clips pass through six comparability gates covering footage quality, rider identity, camera view, normalization, landmark reliability, and a statistical floor. Five of the six can end the run with a specific honest non-answer; the fourth rewrites coordinates instead of rejecting. Only a comparison surviving all of them becomes one coached gap, and the language model is invoked only at that point. A seventh layer, the offline eval suite, checks that the gates actually close.">
+</p>
+
+Almost every engineering decision in this repository comes from one rule: **two
+measurements may be compared only when a difference between them means the same
+thing in both clips.** Everything else follows, and most of what the code does
+is refuse.
+
+A coaching product fails in one direction that matters. It is not a missed
+observation — a rider who gets no answer simply films again. It is a confident
+instruction that is an artifact of the footage: the reference was shot from the
+side and the rider from behind, the two riders ride opposite stances, the
+compared turns were on opposite edges. Each of those produces a clean,
+plausible, entirely wrong number. So every gate below is allowed to end the run,
+and none of them is allowed to lower a confidence score and continue.
+
+| Gate | Comparison is invalid when | What happens instead |
+| --- | --- | --- |
+| Footage quality | Blur, camera stability, exposure, rider size, or usable turn count fails independently | Recapture, with the specific failing check named. Blocked blur or stability limits which metrics can exist at all |
+| Rider identity | More than one person is trackable and the subject is ambiguous | Analysis pauses and asks which rider, with representative-frame boxes, then re-runs on the selected track |
+| Camera view | The two clips declare different views | The pairing is rejected. Each view also carries its own metric allowlist — front-rear footage supports three of the seven metrics, because 2D projection destroys the rest |
+| Stance, edge, phase, direction | Lead/trail, heelside/toeside, turn phase, or screen travel direction are not aligned | This gate rewrites rather than rejects: metrics are normalized per clip so heelside pairs only with heelside and apex with apex |
+| Landmark reliability | A required landmark is occluded, or a tracking gap exceeds 250 ms | Only the metrics depending on that landmark drop out. Long gaps are never bridged by interpolation into coaching evidence |
+| Statistical floor | Confidence is under 0.70, effect size under 1.0 against the rider's own noise floor, or fewer than two paired turns | "No reliable gap found" is returned as a real result, not as a weak suggestion |
+
+The language model sits after all six. It may reword one already-accepted
+comparison; it cannot choose the metric, choose the drill, or introduce a
+number. [`docs/LLM_COACHING_CONTRACT.md`](./docs/LLM_COACHING_CONTRACT.md) is
+the enforced boundary, and the deterministic template in `lib/coaching.ts` stays
+the production fallback even after the renderer is enabled.
+
+[`docs/decisions.md`](./docs/decisions.md) gives the reasoning behind each of
+these boundaries, the alternative that was rejected, and what the choice cost.
+
+## What checks the gates
+
+Six gates that refuse are worth only as much as the evidence that they actually
+refuse, so `evals/` is a seventh layer whose only subject is the other six. It
+runs offline, changes no runtime behaviour, and measures rather than redesigns.
+
+- `evals/gate_surface.py` sweeps every scalar the quality gate accepts and
+  reports where the verdict flips. Across 15,972 configurations, 33.8% scored
+  high enough for a `full` verdict and were demoted to `limited` by a single
+  hard threshold the rider-facing readiness number does not explain.
+- `evals/degrade.py` damages known-good footage by a known amount, so the damage
+  applied is the label. It found that the pipeline's own analysis proxy was
+  destroying the sharpness signal the gate then scored — the system was judging
+  footage it had itself degraded, and blaming the rider's filming for it.
+- `evals/abstention.py` guards the outcome that matters most: a clip compared
+  against itself must produce no coaching gap, and a plainly real difference
+  must produce one. Either check alone is satisfied by a component that always
+  says nothing. It runs in 0.11 s with no video, no MediaPipe, and no FFmpeg.
+
+Three of the four abstention cases in the design are deliberately unwritten.
+They need footage that does not exist yet or a live job queue, and written
+against mocks they would test the mocks.
+
+## What is built
+
+- A mobile-first web flow from goal through reference clip, rider clip, filming
+  context, quality checks, processing, and a one-gap report with inspectable
+  Show Me evidence
+- Browser-side pre-upload checks for duration, resolution, orientation,
+  exposure, and clarity, so an unusable clip fails before it is uploaded
+- Worker-side media normalization honoring phone display rotation, converting
+  fixed and variable frame rate to zero-based CFR 30 fps, with runtime rejection
+  of timebase drift beyond one frame
+- An independent Python analysis service on FFmpeg, OpenCV, and the MediaPipe
+  Pose Landmarker task model, deliberately replaceable
+- Versioned `coach-report-v1` payloads built and persisted server-side, with
+  idempotent terminal callbacks and a 12-minute lost-callback watchdog
+- Session, video, track, turn, metric, evidence, report, drill, progression, and
+  feedback tables in D1; R2 for source and proxy video, with authenticated
+  retention cleanup
+- A bearer-protected instructor review queue and a seven-day beta protocol with
+  pre-committed KPI gates ([`docs/BETA_RUNBOOK.md`](./docs/BETA_RUNBOOK.md))
 
 The MVP is snowboard carving only. It does not claim force, pressure, exact
-board edge angle, or physically accurate 3D measurements. It does not train a
+board edge angle, or physically accurate 3D measurement, and it does not train a
 custom vision model.
 
 ## Repository map
@@ -101,6 +111,10 @@ custom vision model.
 - `lib/coaching.ts`: shared deterministic report contract, validator, and
   confidence-safe fallback
 - `analysis/`: the independent MediaPipe/FFmpeg analysis service and tests
+- `evals/`: offline suite measuring whether the quality gate and the
+  comparison layer actually refuse; needs no video for the abstention checks
+- `docs/decisions.md`: why these boundaries and not others, with the cost of
+  each choice stated
 - `docs/LLM_COACHING_CONTRACT.md`: strict evidence-rendering boundary for a
   future Responses API integration
 - `docs/BETA_RUNBOOK.md`: 20-rider protocol, independent review, KPI gates, and
