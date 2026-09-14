@@ -8,6 +8,8 @@
   · <a href="./docs/ANALYSIS_DEPLOYMENT.md">Deploy the analyzer</a>
 </p>
 
+<p align="center"><strong>English</strong> · <a href="./README.zh-CN.md">中文</a></p>
+
 # Snowtrace
 
 Snowtrace is a confidence-first snowboard carving coach. A rider uploads one

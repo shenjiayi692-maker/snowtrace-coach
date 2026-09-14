@@ -1,5 +1,7 @@
 # Design decisions
 
+**English** · [中文](decisions.zh-CN.md)
+
 The README states what the system refuses to compare. [`LLM_COACHING_CONTRACT.md`](./LLM_COACHING_CONTRACT.md) states what the renderer is permitted to do with an accepted comparison. This document states why these boundaries and not others, what the alternative was in each case, and what the choice cost. Six decisions mattered more than the rest.
 
 ## The analysis service is a separate process, not a library
