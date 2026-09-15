@@ -1,3 +1,12 @@
+> 视频教练会一本正经地让你改一个动作，而那个"问题"其实只是两段片子机位不同。
+> Snowtrace 拒绝比较两段片段，除非它们之间的差异在两边含义相同。
+
+```bash
+git clone https://github.com/shenjiayi692-maker/snowtrace-coach && cd snowtrace-coach && npm ci && npm run dev
+```
+
+需要 Node.js 22.13+。Web 流程可以独立跑起来；姿态分析服务是另一个可选的部署。
+
 <p align="center">
   <img src="./public/og.png" width="100%" alt="Snowtrace — see the gap, ride the fix">
 </p>

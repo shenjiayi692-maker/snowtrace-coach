@@ -1,3 +1,14 @@
+> A video coach will happily tell you to fix a movement that is really just a
+> difference in camera angle. Snowtrace refuses to compare two clips unless a
+> difference between them means the same thing in both.
+
+```bash
+git clone https://github.com/shenjiayi692-maker/snowtrace-coach && cd snowtrace-coach && npm ci && npm run dev
+```
+
+Requires Node.js 22.13+. The web flow runs on its own; the pose analysis service
+is a separate, optional deployment.
+
 <p align="center">
   <img src="./public/og.png" width="100%" alt="Snowtrace — see the gap, ride the fix">
 </p>
