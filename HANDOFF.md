@@ -782,3 +782,24 @@ injected blur. Flip points on this ladder are upper bounds on sensitivity.
 | 8.7 — proxy rejects >16:9 portrait | fixed |
 | 9.3 — capture checks cannot reject | **open, most structural** |
 | 10.2 — blur threshold inside the noise band | **new, open** |
+
+---
+
+## 进度(最后更新 2026-09-14)
+
+- **已完成**:README 架构层改写。`## Current scope` 的 22 条 bullet 换成
+  `## What the system refuses to compare`(六道 comparability gate 的表格)+
+  `## What checks the gates`(eval 层)。新增 `docs/decisions.md`(六条决策,
+  每条都带 cost 行)和 `assets/readme/gates.svg`(带第七层:gate 的自检)。
+  分支 `readme-architecture`,已 merge `origin/main`(那个 commit 只加了 10 行
+  homepage header,无冲突)。九个本地 commit 的 eval 成果已经并进两份文档。
+- **下一步**:Jiayi 用 `git diff main readme-architecture` review,然后自己 push。
+  **未推送** —— 按约定停在这里等 review。
+- **残留状态**:
+  - `main` 未动,仍在 `e91a848`。工作区干净。
+  - 本次开工时 `.git/index.lock` 是 11:52 留下的 0 字节僵尸锁(无 git 进程),
+    已删除,merge 才能跑。
+  - 跨仓库那一轮的剩余项在 `~/Projects/ARCHITECTURE-README-HANDOFF.md`:
+    §6 bio-deck-auditor 的 decisions.md 还没写(那个 clone 有 15 个未提交文件,
+    动 git 之前先问),§7 的 profile README / pinned repos / 四条仓库描述还没做。
+  - 未跑的迁移:无。未填的 key:无。起着的服务:无。

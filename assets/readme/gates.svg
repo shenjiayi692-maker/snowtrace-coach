@@ -1,0 +1,141 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="1060" viewBox="0 0 1200 1060" role="img" aria-labelledby="t d">
+  <title id="t">Snowtrace comparability gates</title>
+  <desc id="d">Two clips enter a cascade of six comparability gates covering footage quality, rider identity, camera view, stance and travel direction, landmark reliability, and a statistical floor. Five of the six can end the run with a specific honest non-answer rather than a number; the fourth rewrites coordinates instead of rejecting. Only a comparison that survives every gate becomes one coached gap and one drill, and the language model is invoked only at that point. A seventh layer, the offline eval suite, runs outside the pipeline and checks that the gates actually close.</desc>
+  <rect width="1200" height="1060" rx="18" fill="#f4f1e9"/>
+  <g font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif">
+    <text x="52" y="52" fill="#7c3028" font-size="14" font-weight="800" letter-spacing="2.4">COMPARABILITY GATES</text>
+    <text x="52" y="86" fill="#161b20" font-size="25" font-weight="740">Every gate can answer &#8220;these two cannot be compared&#8221;</text>
+    <text x="52" y="112" fill="#595d5c" font-size="15">One principle, enforced at six places — and a seventh whose only job is to check the six actually close.</text>
+
+    <g font-family="ui-monospace,SFMono-Regular,Menlo,monospace" font-size="12">
+      <rect x="830" y="30" width="13" height="13" rx="3" fill="#314f59"/>
+      <text x="851" y="41" fill="#595d5c">pipeline stage</text>
+      <rect x="830" y="52" width="13" height="13" rx="3" fill="#7c3028"/>
+      <text x="851" y="63" fill="#595d5c">run ends, no coaching</text>
+      <rect x="830" y="74" width="13" height="13" rx="3" fill="none" stroke="#7c3028" stroke-width="1.6" stroke-dasharray="3 2"/>
+      <text x="851" y="85" fill="#595d5c">checks that the refusals fire</text>
+    </g>
+
+    <!-- inputs -->
+    <rect x="90" y="146" width="290" height="46" rx="9" fill="#ffffff" stroke="#b8b4aa"/>
+    <text x="110" y="175" fill="#161b20" font-size="14.5" font-weight="700">Reference clip</text>
+    <rect x="404" y="146" width="290" height="46" rx="9" fill="#ffffff" stroke="#b8b4aa"/>
+    <text x="424" y="175" fill="#161b20" font-size="14.5" font-weight="700">Rider clip</text>
+    <path d="M235 192 V214 H392" stroke="#979991" stroke-width="1.5" fill="none"/>
+    <path d="M549 192 V214 H392" stroke="#979991" stroke-width="1.5" fill="none"/>
+    <path d="M392 214 V232" stroke="#979991" stroke-width="1.5"/>
+
+    <!-- gate 1 -->
+    <g>
+      <rect x="90" y="232" width="604" height="58" rx="9" fill="#314f59"/>
+      <text x="112" y="258" fill="#f4f1e9" font-size="15" font-weight="710">1 · Footage quality</text>
+      <text x="112" y="279" fill="#cfdde1" font-size="12.5">Blur, stability, exposure, rider size and usable turns gate independently</text>
+      <path d="M694 261 H770" stroke="#7c3028" stroke-width="1.6"/><path d="M764 256 L774 261 L764 266 Z" fill="#7c3028"/>
+      <rect x="778" y="236" width="372" height="50" rx="8" fill="#ffffff" stroke="#7c3028"/>
+      <rect x="778" y="236" width="4" height="50" rx="2" fill="#7c3028"/>
+      <text x="798" y="256" fill="#161b20" font-size="13.5" font-weight="700">Recapture, with the reason named</text>
+      <text x="798" y="275" fill="#595d5c" font-size="12.5">Blocked blur or stability limits which metrics exist at all</text>
+    </g>
+
+    <!-- gate 2 -->
+    <g>
+      <rect x="90" y="307" width="604" height="58" rx="9" fill="#314f59"/>
+      <text x="112" y="333" fill="#f4f1e9" font-size="15" font-weight="710">2 · Rider identity</text>
+      <text x="112" y="354" fill="#cfdde1" font-size="12.5">Multi-person tracking with an explicit selection state</text>
+      <path d="M694 336 H770" stroke="#7c3028" stroke-width="1.6"/><path d="M764 331 L774 336 L764 341 Z" fill="#7c3028"/>
+      <rect x="778" y="311" width="372" height="50" rx="8" fill="#ffffff" stroke="#7c3028"/>
+      <rect x="778" y="311" width="4" height="50" rx="2" fill="#7c3028"/>
+      <text x="798" y="331" fill="#161b20" font-size="13.5" font-weight="700">Ask which rider, then re-run</text>
+      <text x="798" y="350" fill="#595d5c" font-size="12.5">Never silently follow the largest or nearest person</text>
+    </g>
+
+    <!-- gate 3 -->
+    <g>
+      <rect x="90" y="382" width="604" height="58" rx="9" fill="#314f59"/>
+      <text x="112" y="408" fill="#f4f1e9" font-size="15" font-weight="710">3 · Camera view</text>
+      <text x="112" y="429" fill="#cfdde1" font-size="12.5">Views must match; each view carries its own metric allowlist</text>
+      <path d="M694 411 H770" stroke="#7c3028" stroke-width="1.6"/><path d="M764 406 L774 411 L764 416 Z" fill="#7c3028"/>
+      <rect x="778" y="386" width="372" height="50" rx="8" fill="#ffffff" stroke="#7c3028"/>
+      <rect x="778" y="386" width="4" height="50" rx="2" fill="#7c3028"/>
+      <text x="798" y="406" fill="#161b20" font-size="13.5" font-weight="700">Incompatible pairing — stop</text>
+      <text x="798" y="425" fill="#595d5c" font-size="12.5">Front-rear footage supports 3 of the 7 metrics</text>
+    </g>
+
+    <!-- gate 4 -->
+    <g>
+      <rect x="90" y="457" width="604" height="58" rx="9" fill="#314f59"/>
+      <text x="112" y="483" fill="#f4f1e9" font-size="15" font-weight="710">4 · Stance, edge, phase, direction</text>
+      <text x="112" y="504" fill="#cfdde1" font-size="12.5">Normalized so a difference means the same thing in both clips</text>
+      <path d="M694 486 H770" stroke="#979991" stroke-width="1.6" stroke-dasharray="4 3"/>
+      <rect x="778" y="461" width="372" height="50" rx="8" fill="#ece8de" stroke="#b8b4aa"/>
+      <text x="798" y="481" fill="#161b20" font-size="13.5" font-weight="700">No exit — this gate rewrites, never rejects</text>
+      <text x="798" y="500" fill="#595d5c" font-size="12.5">Heelside pairs only with heelside; apex with apex</text>
+    </g>
+
+    <!-- gate 5 -->
+    <g>
+      <rect x="90" y="532" width="604" height="58" rx="9" fill="#314f59"/>
+      <text x="112" y="558" fill="#f4f1e9" font-size="15" font-weight="710">5 · Landmark reliability</text>
+      <text x="112" y="579" fill="#cfdde1" font-size="12.5">Per-metric visibility and coverage; gaps over 250 ms never bridged</text>
+      <path d="M694 561 H770" stroke="#7c3028" stroke-width="1.6"/><path d="M764 556 L774 561 L764 566 Z" fill="#7c3028"/>
+      <rect x="778" y="536" width="372" height="50" rx="8" fill="#ffffff" stroke="#7c3028"/>
+      <rect x="778" y="536" width="4" height="50" rx="2" fill="#7c3028"/>
+      <text x="798" y="556" fill="#161b20" font-size="13.5" font-weight="700">That metric drops, the rest continue</text>
+      <text x="798" y="575" fill="#595d5c" font-size="12.5">An occluded knee disables only what needs that knee</text>
+    </g>
+
+    <!-- gate 6 -->
+    <g>
+      <rect x="90" y="607" width="604" height="58" rx="9" fill="#314f59"/>
+      <text x="112" y="633" fill="#f4f1e9" font-size="15" font-weight="710">6 · Statistical floor</text>
+      <text x="112" y="654" fill="#cfdde1" font-size="12.5">Confidence &#8805; 0.70 · effect &#8805; 1.0 over the rider&#8217;s own noise · &#8805; 2 paired turns</text>
+      <path d="M694 636 H770" stroke="#7c3028" stroke-width="1.6"/><path d="M764 631 L774 636 L764 641 Z" fill="#7c3028"/>
+      <rect x="778" y="611" width="372" height="50" rx="8" fill="#ffffff" stroke="#7c3028"/>
+      <rect x="778" y="611" width="4" height="50" rx="2" fill="#7c3028"/>
+      <text x="798" y="631" fill="#161b20" font-size="13.5" font-weight="700">&#8220;No reliable gap found&#8221; is a result</text>
+      <text x="798" y="650" fill="#595d5c" font-size="12.5">The noise floor is the rider&#8217;s variability, not a constant</text>
+    </g>
+
+    <path d="M392 290 V307 M392 365 V382 M392 440 V457 M392 515 V532 M392 590 V607 M392 665 V690" stroke="#979991" stroke-width="1.5"/>
+    <path d="M387 680 L392 692 L397 680 Z" fill="#979991"/>
+
+    <rect x="90" y="700" width="604" height="72" rx="9" fill="#314f59"/>
+    <text x="112" y="729" fill="#f4f1e9" font-size="16" font-weight="730">One gap, one drill, one inspectable frame pair</text>
+    <text x="112" y="752" fill="#cfdde1" font-size="13">Rendered server-side as a versioned coach-report-v1, persisted before display</text>
+
+    <rect x="778" y="700" width="372" height="72" rx="9" fill="#ece8de" stroke="#b8b4aa"/>
+    <text x="798" y="724" fill="#161b20" font-size="13.5" font-weight="700">The model enters only here</text>
+    <text x="798" y="744" fill="#595d5c" font-size="12.5">It may reword one accepted comparison. It cannot</text>
+    <text x="798" y="762" fill="#595d5c" font-size="12.5">pick the metric, the drill, or any number.</text>
+
+    <!-- gate 7: the check on the gates, off the runtime path -->
+    <path d="M90 920 H62 V261" stroke="#7c3028" stroke-width="1.6" stroke-dasharray="5 4" fill="none"/>
+    <path d="M62 261 H84" stroke="#7c3028" stroke-width="1.6"/><path d="M78 256 L88 261 L78 266 Z" fill="#7c3028"/>
+    <path d="M62 636 H84" stroke="#7c3028" stroke-width="1.6"/><path d="M78 631 L88 636 L78 641 Z" fill="#7c3028"/>
+
+    <rect x="90" y="812" width="1060" height="218" rx="9" fill="#ffffff" stroke="#7c3028" stroke-width="1.6" stroke-dasharray="5 4"/>
+    <text x="112" y="846" fill="#7c3028" font-size="15" font-weight="710">7 · The check on the gates</text>
+    <text x="112" y="868" fill="#595d5c" font-size="12.5">Offline, outside the pipeline. It changes no runtime behaviour — it measures whether the six above actually close, and proposes.</text>
+
+    <rect x="112" y="892" width="322" height="110" rx="8" fill="#ece8de"/>
+    <text x="132" y="916" fill="#161b20" font-size="13.5" font-weight="700">L0 · decision surface</text>
+    <text x="132" y="936" fill="#7c3028" font-size="11.5" font-family="ui-monospace,SFMono-Regular,Menlo,monospace">evals/gate_surface.py</text>
+    <text x="132" y="959" fill="#595d5c" font-size="12">Sweeps every scalar the gate takes —</text>
+    <text x="132" y="976" fill="#595d5c" font-size="12">15,972 configurations. 33.8% scored full,</text>
+    <text x="132" y="993" fill="#595d5c" font-size="12">then were demoted by one hard threshold.</text>
+
+    <rect x="459" y="892" width="322" height="110" rx="8" fill="#ece8de"/>
+    <text x="479" y="916" fill="#161b20" font-size="13.5" font-weight="700">L1 · degradation ladder</text>
+    <text x="479" y="936" fill="#7c3028" font-size="11.5" font-family="ui-monospace,SFMono-Regular,Menlo,monospace">evals/degrade.py</text>
+    <text x="479" y="959" fill="#595d5c" font-size="12">Damages known-good footage by a known</text>
+    <text x="479" y="976" fill="#595d5c" font-size="12">amount, so the damage is the label. Found:</text>
+    <text x="479" y="993" fill="#595d5c" font-size="12">the proxy upscale destroyed the blur signal.</text>
+
+    <rect x="806" y="892" width="322" height="110" rx="8" fill="#ece8de"/>
+    <text x="826" y="916" fill="#161b20" font-size="13.5" font-weight="700">L3 · abstention</text>
+    <text x="826" y="936" fill="#7c3028" font-size="11.5" font-family="ui-monospace,SFMono-Regular,Menlo,monospace">evals/abstention.py</text>
+    <text x="826" y="959" fill="#595d5c" font-size="12">A clip against itself must yield nothing;</text>
+    <text x="826" y="976" fill="#595d5c" font-size="12">a real difference must yield something.</text>
+    <text x="826" y="993" fill="#595d5c" font-size="12">0.11 s, no video. Three cases left unwritten.</text>
+  </g>
+</svg>
